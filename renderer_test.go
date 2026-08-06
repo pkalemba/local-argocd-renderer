@@ -158,6 +158,12 @@ func TestGoldenExamples(t *testing.T) {
 			expectedPath: "examples/appset-clusters/expected.yaml",
 			clustersPath: "examples/appset-clusters/clusters.yaml",
 		},
+		{
+			name:         "appset-clusters-helm",
+			appPath:      "examples/appset-clusters-helm/appset.yaml",
+			expectedPath: "examples/appset-clusters-helm/expected.yaml",
+			clustersPath: "examples/appset-clusters-helm/clusters.yaml",
+		},
 	}
 
 	for _, tc := range testCases {

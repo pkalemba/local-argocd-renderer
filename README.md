@@ -154,6 +154,33 @@ they do in a cluster: `clusters.selector` matches on them, and they are exposed 
 the template as `{{ .metadata.labels.<key> }}` (or `{{metadata.labels.<key>}}`
 without `goTemplate`).
 
+`examples/appset-clusters-helm` shows the usual pattern of deriving the Helm values of
+each generated Application from the cluster's labels:
+
+```yaml
+generators:
+  - clusters:
+      selector:
+        matchExpressions:
+          - key: cluster.com/family
+            operator: Exists
+      values:
+        family: '{{ index .metadata.labels "cluster.com/family" }}'
+template:
+  spec:
+    source:
+      helm:
+        values: |
+          {{- $clusterFamily := index .metadata.labels "cluster.com/family" }}
+          {{- $internalClusterDomain := index .metadata.labels "cluster.com/internal-domain" }}
+          istio-expose:
+            family: {{ .values.family }}
+            domain:
+            {{- if eq $clusterFamily "int" }}
+              name: "test.{{ $internalClusterDomain }}"
+            {{- end }}
+```
+
 Without `--clusters` the generator still reports the `in-cluster` entry, exactly as
 it does on a fresh Argo CD install, and the render carries a warning saying so.
 

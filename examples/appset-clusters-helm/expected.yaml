@@ -1,0 +1,24 @@
+# Generated 2 manifests from 2 sources (2 after deduplication)
+# Rendered 2 applications
+---
+apiVersion: v1
+data:
+  domain: test.ext.example.com
+  family: ext
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: istio-expose-ext-cluster
+  name: istio-expose
+  namespace: ext-cluster-namespace
+---
+apiVersion: v1
+data:
+  domain: test.int.example.internal
+  family: int
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: istio-expose-int-cluster
+  name: istio-expose
+  namespace: int-cluster-namespace
