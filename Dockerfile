@@ -5,7 +5,9 @@
 
 ARG GO_VERSION=1.26
 ARG ALPINE_VERSION=3.21
+# renovate: datasource=github-releases depName=helm/helm
 ARG HELM_VERSION=v3.16.4
+# renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/(?<version>.+)$
 ARG KUSTOMIZE_VERSION=v5.5.0
 
 # Cross-compile the renderer from the build platform for the target platform.

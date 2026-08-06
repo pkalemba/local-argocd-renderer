@@ -38,6 +38,12 @@ docker run --rm -v "$PWD:/repo" ghcr.io/pkalemba/local-argocd-renderer \
 
 The image bundles `helm` and `kustomize`, which the renderer shells out to.
 
+Dependencies are kept up to date by Renovate (`renovate.json5`). Argo CD, gitops-engine
+and the `k8s.io` modules land in a single `argo-cd stack` pull request, because go.mod
+mirrors pins that Argo CD does not export — those have to be reconciled against the
+release's own go.mod before merging. The `helm` and `kustomize` versions pinned in the
+Dockerfile and the CI workflow are tracked too.
+
 To build from source:
 
 ```bash

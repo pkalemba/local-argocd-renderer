@@ -11,6 +11,11 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # renovate: datasource=github-releases depName=helm/helm
+      HELM_VERSION: v3.16.4
+      # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/(?<version>.+)$
+      KUSTOMIZE_VERSION: v5.5.0
     steps:
       - uses: actions/checkout@v4
 
@@ -22,11 +27,11 @@ jobs:
       - name: Install helm
         uses: azure/setup-helm@v4
         with:
-          version: v3.16.4
+          version: ${{ env.HELM_VERSION }}
 
       - name: Install kustomize
         run: |
-          curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz" \
+          curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" \
             | tar -xz -C /usr/local/bin kustomize
 
       - run: go vet ./...

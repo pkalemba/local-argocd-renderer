@@ -1,0 +1,81 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:recommended",
+    ":semanticCommitsDisabled",
+  ],
+
+  // go.mod pins the Go toolchain at the patch level, following Argo CD.
+  constraints: {
+    go: "1.26",
+  },
+
+  // Keep go.sum consistent with whatever Renovate changes in go.mod.
+  postUpdateOptions: [
+    "gomodTidy",
+  ],
+
+  // Later rules win, so the broad opt-out comes first and the argo-cd stack
+  // opts its own transitive dependencies back in.
+  packageRules: [
+    // Transitive Go dependencies are written out by `go mod tidy` but chosen by
+    // Argo CD, so bumping them one by one produces churn and a graph Argo CD was
+    // never built against.
+    {
+      matchManagers: ["gomod"],
+      matchDepTypes: ["indirect"],
+      enabled: false,
+    },
+
+    // Argo CD does not export the replace directives it resolves its own graph
+    // with, so go.mod mirrors them: gitops-engine has to point at the module
+    // version built from the same commit as the argo-cd tag, and the k8s.io
+    // staging modules have to match the versions argo-cd pins. None of that can
+    // be derived automatically, so these move as one reviewable pull request
+    // that a human reconciles against the argo-cd release's go.mod before
+    // merging — including the k8s.io modules that are only indirect here.
+    {
+      groupName: "argo-cd stack",
+      matchManagers: ["gomod"],
+      matchPackageNames: [
+        "github.com/argoproj/argo-cd/v3",
+        "github.com/argoproj/argo-cd/gitops-engine",
+        "k8s.io/**",
+        "sigs.k8s.io/**",
+      ],
+      enabled: true,
+      automerge: false,
+      addLabels: ["needs-manual-pin-sync"],
+    },
+
+    {
+      groupName: "github actions",
+      matchManagers: ["github-actions"],
+    },
+
+    // helm and kustomize are pinned in both the Dockerfile and the CI workflow;
+    // they are the same tools and should not drift apart.
+    {
+      groupName: "helm and kustomize",
+      matchPackageNames: [
+        "helm/helm",
+        "kubernetes-sigs/kustomize",
+      ],
+    },
+  ],
+
+  customManagers: [
+    {
+      // Picks up the `# renovate: datasource=... depName=...` comments in front
+      // of the pinned tool versions in the Dockerfile and the CI workflow.
+      customType: "regex",
+      managerFilePatterns: [
+        "/^Dockerfile$/",
+        "/^\\.github/workflows/.+\\.yml$/",
+      ],
+      matchStrings: [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(\\s+extractVersion=(?<extractVersion>\\S+))?\\s+(ARG|ENV)?\\s*\\w+[:=]\\s*[\"']?(?<currentValue>[^\"'\\s]+)",
+      ],
+    },
+  ],
+}
