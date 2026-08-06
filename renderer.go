@@ -22,7 +22,13 @@ import (
 	"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/argoproj/argo-cd/v3/reposerver/apiclient"
 	"github.com/argoproj/argo-cd/v3/reposerver/repository"
+	"github.com/argoproj/argo-cd/v3/util/argo"
 	"github.com/argoproj/argo-cd/v3/util/git"
+)
+
+const (
+	appLabelKey    = "app.kubernetes.io/instance"
+	installationID = "local-cli"
 )
 
 // TemplateOptions contains options for the templating process
@@ -259,11 +265,21 @@ resources:
 		targetObjects = append(targetObjects, &obj)
 	}
 
-	// Deduplicate target objects using the library function
+	// Normalize and deduplicate target objects using the library function. The
+	// callback re-applies the tracking label whenever a namespace is filled in or
+	// cleared, exactly as the application controller does.
 	infoProvider := &resourceInfoProviderStub{}
-	dedupedObjects, conditions, err := controller.DeduplicateTargetObjects(app.Spec.Destination.Namespace, targetObjects, infoProvider)
+	resourceTracking := argo.NewResourceTracking()
+	dedupedObjects, conditions, err := controller.NormalizeTargetObjects(
+		app.Spec.Destination.Namespace,
+		targetObjects,
+		infoProvider,
+		func(obj *unstructured.Unstructured) error {
+			return resourceTracking.SetAppInstance(obj, appLabelKey, app.Name, app.Spec.Destination.Namespace, v1alpha1.TrackingMethodLabel, installationID)
+		},
+	)
 	if err != nil {
-		return nil, fmt.Errorf("error deduplicating target objects: %w", err)
+		return nil, fmt.Errorf("error normalizing target objects: %w", err)
 	}
 
 	// Collect duplicate warnings
@@ -376,9 +392,9 @@ func buildRequestsFromApplication(app *v1alpha1.Application) ([]*apiclient.Manif
 				string(v1alpha1.ApplicationSourceTypeKustomize): true,
 				string(v1alpha1.ApplicationSourceTypeDirectory): true,
 			},
-			AppLabelKey:        "app.kubernetes.io/instance",
+			AppLabelKey:        appLabelKey,
 			TrackingMethod:     string(v1alpha1.TrackingMethodLabel),
-			InstallationID:     "local-cli",
+			InstallationID:     installationID,
 			ProjectName:        app.Spec.Project,
 			HasMultipleSources: len(sources) > 1,
 		}

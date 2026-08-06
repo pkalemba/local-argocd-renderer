@@ -1,7 +1,6 @@
 package renderer
 
 import (
-	"context"
 	"fmt"
 	"maps"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -49,7 +47,6 @@ func GenerateApplications(appSet *v1alpha1.ApplicationSet, opts TemplateOptions)
 		localGenerators(localGeneratorOptions{
 			repoRoot:            repoRootOrDefault(opts.RepoRoot),
 			controllerNamespace: appSet.Namespace,
-			clusterSecrets:      clusterSecrets,
 			k8sClient:           k8sClient,
 			clustersUsed:        &clustersUsed,
 		}),
@@ -79,7 +76,6 @@ func clusterSecretsFor(appSet *v1alpha1.ApplicationSet, opts TemplateOptions) ([
 type localGeneratorOptions struct {
 	repoRoot            string
 	controllerNamespace string
-	clusterSecrets      []corev1.Secret
 	k8sClient           client.Client
 	clustersUsed        *atomic.Bool
 }
@@ -88,12 +84,7 @@ type localGeneratorOptions struct {
 // Git and Clusters generators are the upstream ones fed from local inputs, and
 // everything that has to reach out over the network reports an error instead.
 func localGenerators(opts localGeneratorOptions) map[string]generators.Generator {
-	clusterGen := generators.NewClusterGenerator(
-		context.Background(),
-		opts.k8sClient,
-		k8sfake.NewClientset(clusterSecretObjects(opts.clusterSecrets)...),
-		opts.controllerNamespace,
-	)
+	clusterGen := generators.NewClusterGenerator(opts.k8sClient, opts.controllerNamespace)
 
 	terminalGenerators := map[string]generators.Generator{
 		"List":                    generators.NewListGenerator(),
@@ -114,15 +105,6 @@ func localGenerators(opts localGeneratorOptions) map[string]generators.Generator
 	topLevelGenerators["Merge"] = generators.NewMergeGenerator(nestedGenerators)
 
 	return topLevelGenerators
-}
-
-func clusterSecretObjects(secrets []corev1.Secret) []runtime.Object {
-	objects := make([]runtime.Object, 0, len(secrets))
-	for i := range secrets {
-		objects = append(objects, &secrets[i])
-	}
-
-	return objects
 }
 
 // localClient provides the Kubernetes reads the generators perform: the AppProject

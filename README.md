@@ -110,6 +110,11 @@ kind is known up front, along with their `...YAML` variants. To only expand an
 ApplicationSet into Applications without rendering them, use
 `renderer.GenerateApplications`.
 
+> **Note**: this module is meant to be built and run, not imported. Its `go.mod`
+> carries the `replace` directives Argo CD needs but does not export (gitops-engine
+> and the `k8s.io` staging modules), and `replace` does not apply to importers, so
+> `go get`ting this package will not resolve.
+
 ## ApplicationSets
 
 An ApplicationSet is expanded by the upstream ApplicationSet controller code

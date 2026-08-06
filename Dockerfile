@@ -3,7 +3,7 @@
 # Build with buildx to produce a multi-platform image:
 #   docker buildx build --platform linux/amd64,linux/arm64 -t local-argocd-renderer .
 
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 ARG ALPINE_VERSION=3.21
 ARG HELM_VERSION=v3.16.4
 ARG KUSTOMIZE_VERSION=v5.5.0

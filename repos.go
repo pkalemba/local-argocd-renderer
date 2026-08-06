@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/argoproj/argo-cd/v3/applicationset/services"
+	"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/argoproj/argo-cd/v3/util/git"
 )
 
@@ -30,7 +31,7 @@ func newLocalRepos(repoRoot string) services.Repos {
 
 // GetFiles returns the contents of the files matching pattern, keyed by their path
 // relative to the repository root.
-func (r *localRepos) GetFiles(_ context.Context, repoURL, _, _, pattern string, _, _ bool) (map[string][]byte, error) {
+func (r *localRepos) GetFiles(_ context.Context, repoURL, _, _, pattern string, _ bool, _ *v1alpha1.SourceIntegrity) (map[string][]byte, error) {
 	root, err := filepath.Abs(r.root)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving repo root %q: %w", r.root, err)
@@ -71,7 +72,7 @@ func (r *localRepos) GetFiles(_ context.Context, repoURL, _, _, pattern string, 
 // GetDirectories returns every directory below the repository root, as paths
 // relative to that root. Hidden directories are skipped, matching the repo-server
 // default.
-func (r *localRepos) GetDirectories(_ context.Context, _, _, _ string, _, _ bool) ([]string, error) {
+func (r *localRepos) GetDirectories(_ context.Context, _, _, _ string, _ bool, _ *v1alpha1.SourceIntegrity) ([]string, error) {
 	root, err := filepath.Abs(r.root)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving repo root %q: %w", r.root, err)
