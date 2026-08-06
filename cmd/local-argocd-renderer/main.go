@@ -5,21 +5,39 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	renderer "github.com/lorenzbischof/local-argocd-renderer"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
 )
 
+// version is set at build time via -ldflags "-X main.version=..."
+var version = "dev"
+
 func main() {
-	var applicationFile = flag.String("app", "", "Path to Application CRD YAML file (use '-' for stdin) (required)")
+	var applicationFile = flag.String("app", "", "Path to Application or ApplicationSet CRD YAML file (use '-' for stdin) (required)")
+	var clustersFile = flag.String("clusters", "", "Path to a file or directory with Argo CD cluster secrets, used by the ApplicationSet cluster generator")
+	var outputDir = flag.String("output-dir", "", "Write manifests to <dir>/<application>/<kind>-<name>.yaml instead of stdout")
+	var quiet = flag.Bool("quiet", false, "Suppress progress output on stderr")
+	var showVersion = flag.Bool("version", false, "Print the version and exit")
 	flag.Parse()
 
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
+
 	if *applicationFile == "" {
-		fmt.Fprintf(os.Stderr, "Error: --application flag is required\n")
-		fmt.Fprintf(os.Stderr, "Usage: %s --application <file> | --application -\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Error: --app flag is required\n")
+		fmt.Fprintf(os.Stderr, "Usage: %s --app <file> | --app -\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Examples:\n")
-		fmt.Fprintf(os.Stderr, "  %s --application app.yaml\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  cat app.yaml | %s --application -\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --app app.yaml\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --app appset.yaml\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --app appset.yaml --clusters clusters.yaml\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --app appset.yaml --output-dir rendered\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  cat app.yaml | %s --app -\n", os.Args[0])
 		os.Exit(1)
 	}
 
@@ -27,9 +45,10 @@ func main() {
 	opts := renderer.TemplateOptions{
 		ApplicationFile: *applicationFile,
 		RepoRoot:        ".",
+		ClustersFile:    *clustersFile,
 	}
 
-	result, err := renderer.TemplateFromApplication(ctx, opts)
+	result, err := renderer.Template(ctx, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -40,6 +59,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", warning)
 	}
 
+	if *outputDir != "" {
+		if err := saveManifests(result, *outputDir, *quiet); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	printManifests(result)
+}
+
+func printManifests(result *renderer.TemplateResult) {
 	fmt.Printf("# Generated %d manifests\n", len(result.Objects))
 	fmt.Println("---")
 
@@ -57,4 +88,68 @@ func main() {
 
 		fmt.Printf("%s", yamlBytes)
 	}
+}
+
+// saveManifests writes one file per object, grouped into a directory per rendered
+// Application, so that an ApplicationSet ends up as one directory per generated
+// Application.
+func saveManifests(result *renderer.TemplateResult, outputDir string, quiet bool) error {
+	for _, app := range result.Applications {
+		if err := saveManifestsToFiles(app.Objects, outputDir, app.Name, quiet); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func saveManifestsToFiles(objects []*unstructured.Unstructured, outputDir, appName string, quiet bool) error {
+	appDir := filepath.Join(outputDir, appName)
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		return fmt.Errorf("failed to create app directory: %w", err)
+	}
+
+	// Group objects by kind for better organization
+	kindCounts := make(map[string]int)
+
+	for _, object := range objects {
+		kind := object.GetKind()
+		if kind == "" {
+			kind = "unknown"
+		}
+
+		kindCounts[kind]++
+
+		var filename string
+		if name := object.GetName(); name != "" {
+			if kindCounts[kind] == 1 {
+				filename = fmt.Sprintf("%s-%s.yaml", strings.ToLower(kind), name)
+			} else {
+				filename = fmt.Sprintf("%s-%s-%d.yaml", strings.ToLower(kind), name, kindCounts[kind])
+			}
+		} else {
+			filename = fmt.Sprintf("%s-%d.yaml", strings.ToLower(kind), kindCounts[kind])
+		}
+
+		filePath := filepath.Join(appDir, filename)
+
+		yamlBytes, err := yaml.Marshal(object)
+		if err != nil {
+			return fmt.Errorf("failed to marshal object: %w", err)
+		}
+
+		if err := os.WriteFile(filePath, yamlBytes, 0644); err != nil {
+			return fmt.Errorf("failed to write file %s: %w", filePath, err)
+		}
+
+		if !quiet {
+			fmt.Fprintf(os.Stderr, "Saved: %s\n", filePath)
+		}
+	}
+
+	if !quiet {
+		fmt.Fprintf(os.Stderr, "Generated %d manifests for application '%s' in directory: %s\n", len(objects), appName, appDir)
+	}
+
+	return nil
 }

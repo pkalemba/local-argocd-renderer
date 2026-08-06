@@ -1,0 +1,22 @@
+# Generated 2 manifests from 2 sources (2 after deduplication)
+# Rendered 2 applications
+---
+apiVersion: v1
+data:
+  greeting: hello from alpha
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: git-alpha
+  name: alpha
+  namespace: alpha-namespace
+---
+apiVersion: v1
+data:
+  greeting: hello from beta
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: git-beta
+  name: beta
+  namespace: beta-namespace

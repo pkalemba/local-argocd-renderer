@@ -1,0 +1,22 @@
+# Generated 2 manifests from 2 sources (2 after deduplication)
+# Rendered 2 applications
+---
+apiVersion: v1
+data:
+  greeting: hello from one
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: list-one
+  name: one
+  namespace: one-namespace
+---
+apiVersion: v1
+data:
+  greeting: hello from two
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: list-two
+  name: two
+  namespace: two-namespace

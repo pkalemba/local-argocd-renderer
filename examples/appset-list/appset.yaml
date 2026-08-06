@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: list-appset
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - list:
+        elements:
+          - name: one
+            namespace: one-namespace
+          - name: two
+            namespace: two-namespace
+  template:
+    metadata:
+      name: list-{{ .name }}
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/myorg/myrepo
+        path: examples/appset-list/input/{{ .name }}
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'

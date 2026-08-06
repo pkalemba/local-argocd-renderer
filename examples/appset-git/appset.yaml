@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: git-appset
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: https://github.com/myorg/myrepo
+        revision: HEAD
+        directories:
+          - path: examples/appset-git/input/*
+  template:
+    metadata:
+      name: git-{{ .path.basename }}
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/myorg/myrepo
+        path: '{{ .path.path }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .path.basename }}-namespace'

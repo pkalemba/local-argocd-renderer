@@ -20,6 +20,9 @@ func formatOutput(result *TemplateResult) string {
 
 	// Header line
 	fmt.Fprintf(&output, "# Generated %d manifests from %d sources (%d after deduplication)\n", len(result.Objects), result.SourcesProcessed, len(result.Objects))
+	if result.ApplicationsProcessed > 1 {
+		fmt.Fprintf(&output, "# Rendered %d applications\n", result.ApplicationsProcessed)
+	}
 	output.WriteString("---\n")
 
 	// Sort manifests for consistent ordering (by kind, then by name)
@@ -114,6 +117,7 @@ type goldenTestCase struct {
 	name         string
 	appPath      string
 	expectedPath string
+	clustersPath string
 }
 
 func TestGoldenExamples(t *testing.T) {
@@ -138,6 +142,22 @@ func TestGoldenExamples(t *testing.T) {
 			appPath:      "examples/directory/app.yaml",
 			expectedPath: "examples/directory/expected.yaml",
 		},
+		{
+			name:         "appset-list",
+			appPath:      "examples/appset-list/appset.yaml",
+			expectedPath: "examples/appset-list/expected.yaml",
+		},
+		{
+			name:         "appset-git",
+			appPath:      "examples/appset-git/appset.yaml",
+			expectedPath: "examples/appset-git/expected.yaml",
+		},
+		{
+			name:         "appset-clusters",
+			appPath:      "examples/appset-clusters/appset.yaml",
+			expectedPath: "examples/appset-clusters/expected.yaml",
+			clustersPath: "examples/appset-clusters/clusters.yaml",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -147,9 +167,10 @@ func TestGoldenExamples(t *testing.T) {
 			opts := TemplateOptions{
 				ApplicationFile: tc.appPath,
 				RepoRoot:        ".",
+				ClustersFile:    tc.clustersPath,
 			}
 
-			result, err := TemplateFromApplication(ctx, opts)
+			result, err := Template(ctx, opts)
 			if err != nil {
 				t.Fatalf("Failed to template application: %v", err)
 			}
