@@ -30,15 +30,7 @@ The official Argo CD CLI requires a server connection (`argocd app manifests` fa
 Pre-built binaries for Linux, macOS and Windows on amd64/arm64 are attached to
 every [release](../../releases), and a multi-platform container image is published
 to `ghcr.io/pkalemba/local-argocd-renderer`. Both are produced by the release
-workflow, which runs when a `v*` tag is pushed:
-
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-Running the release workflow manually publishes a branch- and sha-tagged image
-without binaries and without moving `latest`. CI builds the image on every pull
-request but never pushes it.
+workflow — see [Releasing](#releasing).
 
 ```bash
 docker run --rm -v "$PWD:/repo" ghcr.io/pkalemba/local-argocd-renderer \
@@ -47,7 +39,37 @@ docker run --rm -v "$PWD:/repo" ghcr.io/pkalemba/local-argocd-renderer \
 
 The image bundles `helm` and `kustomize`, which the renderer shells out to.
 
-Dependencies are kept up to date by Renovate (`renovate.json5`). Argo CD, gitops-engine
+### Releasing
+
+Releases are cut by [semantic-release](https://semantic-release.gitbook.io) on every
+push to `main`. It reads the commits since the last tag, decides whether a release is
+warranted and what the version is, then creates the tag and the GitHub release and runs
+the same make targets used locally:
+
+| Commit | Result |
+|--------|--------|
+| `fix: ...` | patch release |
+| `feat: ...` | minor release |
+| `feat!: ...` or a `BREAKING CHANGE:` footer | major release |
+| anything else (`chore`, `docs`, `refactor`, …) | no release |
+
+**Commits on `main` therefore have to follow
+[Conventional Commits](https://www.conventionalcommits.org)** — a commit that does not
+is simply treated as not release-worthy, so a fix written without the `fix:` prefix
+silently never ships.
+
+A release publishes the cross-compiled binaries with their checksums as release assets,
+and pushes the multi-platform image to GHCR as `:vX.Y.Z` and `:latest`. There is no tag
+trigger: pushing a `v*` tag by hand does nothing, because a second path to publishing
+could only disagree with this one. CI builds the image on every pull request but never
+pushes it.
+
+> **Note**: the first push creates the GHCR package as **private**. It has to be switched
+> to public once, under the repository's Packages settings, before `docker run` works
+> without authenticating.
+
+Dependencies are kept up to date by Renovate (`renovate.json5`), which writes conventional
+commit messages so its merged updates cut patch releases. Argo CD, gitops-engine
 and the `k8s.io` modules land in a single `argo-cd stack` pull request, because go.mod
 mirrors pins that Argo CD does not export — those have to be reconciled against the
 release's own go.mod before merging. The `helm` and `kustomize` versions pinned in the

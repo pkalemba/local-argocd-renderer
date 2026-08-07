@@ -1,0 +1,24 @@
+{
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "make checksums VERSION=v${nextRelease.version}",
+        "publishCmd": "make image-push VERSION=v${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          { "path": "dist/*", "label": "binaries and checksums" }
+        ],
+        "successComment": false,
+        "failComment": false
+      }
+    ]
+  ]
+}
