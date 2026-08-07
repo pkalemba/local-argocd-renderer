@@ -118,6 +118,7 @@ cat examples/directory/app.yaml | ./local-argocd-renderer --app -
 | `--dir` | Directory to scan recursively instead of naming a single manifest |
 | `--clusters` | File or directory with Argo CD cluster secrets for the cluster generator |
 | `--include-applications` | Also emit the Application resources themselves |
+| `--include-tests` | Keep the test hooks Helm charts ship, which are dropped by default |
 | `--output-dir` | Write `<dir>/<application>/<kind>-<name>.yaml` instead of printing to stdout |
 | `--quiet` | Suppress progress output on stderr |
 | `--version` | Print the version and exit |
@@ -135,6 +136,32 @@ always produces the same output.
 Naming a single manifest with `--app` is stricter: a document that is neither an
 Application nor an ApplicationSet is an error there, because the file was named
 explicitly.
+
+### Chart tests
+
+Charts commonly ship test hooks — a Pod annotated `helm.sh/hook: test` — and
+`helm template` renders them like any other manifest. They are dropped by default here,
+because they are not part of what the cluster runs and are noise in a diff.
+
+That is the same as setting Argo CD's per-source switch on every Application:
+
+```yaml
+spec:
+  source:
+    helm:
+      skipTests: true
+```
+
+`--include-tests` hands the decision back to the manifests: the hooks are rendered
+unless a source asks for them to be skipped with the field above.
+
+```bash
+./local-argocd-renderer --dir apps/ --include-tests
+```
+
+Non-Helm sources are unaffected either way — the tests are only skipped once a source has
+been identified as Helm, because in Argo CD's model a non-empty `helm:` block is itself
+what marks a source as a chart.
 
 ### Emitting the Applications themselves
 
