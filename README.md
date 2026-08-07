@@ -29,7 +29,16 @@ The official Argo CD CLI requires a server connection (`argocd app manifests` fa
 
 Pre-built binaries for Linux, macOS and Windows on amd64/arm64 are attached to
 every [release](../../releases), and a multi-platform container image is published
-to `ghcr.io/pkalemba/local-argocd-renderer`:
+to `ghcr.io/pkalemba/local-argocd-renderer`. Both are produced by the release
+workflow, which runs when a `v*` tag is pushed:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Running the release workflow manually publishes a branch- and sha-tagged image
+without binaries and without moving `latest`. CI builds the image on every pull
+request but never pushes it.
 
 ```bash
 docker run --rm -v "$PWD:/repo" ghcr.io/pkalemba/local-argocd-renderer \
