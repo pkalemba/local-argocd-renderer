@@ -1,20 +1,26 @@
 package renderer
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 
 	"sigs.k8s.io/yaml"
 
@@ -36,11 +42,19 @@ type TemplateOptions struct {
 	// ApplicationFile points at a manifest holding either an Application or an
 	// ApplicationSet. Use "-" to read from stdin.
 	ApplicationFile string
+	// ApplicationDir is scanned recursively for manifests instead, rendering every
+	// Application and ApplicationSet it finds and ignoring everything else. It is
+	// mutually exclusive with ApplicationFile.
+	ApplicationDir  string
 	RepoRoot        string
 	MaxManifestSize string
 	// ClustersFile points at a file or directory holding Argo CD cluster secrets.
 	// Without it the ApplicationSet cluster generator only sees the in-cluster entry.
 	ClustersFile string
+	// IncludeApplications emits the Application resource itself alongside the
+	// manifests it renders to, so that the Applications an ApplicationSet generates
+	// come out next to their contents.
+	IncludeApplications bool
 }
 
 // TemplateResult contains the results of the templating process
@@ -66,9 +80,17 @@ type ApplicationResult struct {
 	SourcesProcessed int
 }
 
-// Template processes an ArgoCD Application or ApplicationSet and returns templated
-// manifests. The kind is taken from the manifest itself.
+// Template processes the ArgoCD Applications and ApplicationSets named by opts,
+// either the single manifest in ApplicationFile or everything under ApplicationDir.
+// The kind is taken from the manifests themselves.
 func Template(ctx context.Context, opts TemplateOptions) (*TemplateResult, error) {
+	if opts.ApplicationDir != "" {
+		if opts.ApplicationFile != "" {
+			return nil, fmt.Errorf("ApplicationFile and ApplicationDir are mutually exclusive")
+		}
+		return TemplateFromDirectory(ctx, opts)
+	}
+
 	data, err := readManifest(opts.ApplicationFile)
 	if err != nil {
 		return nil, err
@@ -77,29 +99,100 @@ func Template(ctx context.Context, opts TemplateOptions) (*TemplateResult, error
 	return TemplateFromYAML(ctx, string(data), opts)
 }
 
-// TemplateFromYAML processes an ArgoCD Application or ApplicationSet from YAML content.
+// TemplateFromYAML processes the ArgoCD Applications and ApplicationSets in YAML
+// content, which may hold several documents. A document of any other kind is an
+// error here, because the content was named explicitly.
 func TemplateFromYAML(ctx context.Context, yamlContent string, opts TemplateOptions) (*TemplateResult, error) {
-	var typeMeta metav1.TypeMeta
-	if err := yaml.Unmarshal([]byte(yamlContent), &typeMeta); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	return templateDocuments(ctx, []byte(yamlContent), opts, false)
+}
+
+// TemplateFromDirectory renders every Application and ApplicationSet in the
+// manifests below opts.ApplicationDir. Documents of any other kind are skipped, so
+// a tree of mixed manifests can be pointed at directly.
+func TemplateFromDirectory(ctx context.Context, opts TemplateOptions) (*TemplateResult, error) {
+	files, err := manifestFiles(opts.ApplicationDir)
+	if err != nil {
+		return nil, err
 	}
 
-	switch typeMeta.Kind {
-	case "Application":
-		app, err := parseApplication([]byte(yamlContent))
+	result := &TemplateResult{}
+	for _, file := range files {
+		data, err := os.ReadFile(file)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to read %q: %w", file, err)
 		}
-		return renderApplication(ctx, app, opts)
-	case "ApplicationSet":
-		appSet, err := parseApplicationSet([]byte(yamlContent))
+
+		fileResult, err := templateDocuments(ctx, data, opts, true)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error rendering %q: %w", file, err)
 		}
-		return renderApplicationSet(ctx, appSet, opts)
-	default:
-		return nil, fmt.Errorf("expected kind 'Application' or 'ApplicationSet', got '%s'", typeMeta.Kind)
+
+		result.merge(fileResult)
 	}
+
+	return result, nil
+}
+
+// templateDocuments renders every Application and ApplicationSet document in data.
+// With skipOtherKinds set, documents of another kind are ignored rather than
+// rejected.
+func templateDocuments(ctx context.Context, data []byte, opts TemplateOptions, skipOtherKinds bool) (*TemplateResult, error) {
+	documents, err := splitDocuments(data)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &TemplateResult{}
+	for _, document := range documents {
+		var typeMeta metav1.TypeMeta
+		if err := yaml.Unmarshal(document, &typeMeta); err != nil {
+			if skipOtherKinds {
+				// Not every YAML file in a tree of manifests is a Kubernetes object.
+				continue
+			}
+			return nil, fmt.Errorf("failed to parse YAML: %w", err)
+		}
+
+		var documentResult *TemplateResult
+		switch typeMeta.Kind {
+		case "Application":
+			app, err := parseApplication(document)
+			if err != nil {
+				return nil, err
+			}
+			documentResult, err = renderApplication(ctx, app, opts)
+			if err != nil {
+				return nil, err
+			}
+		case "ApplicationSet":
+			appSet, err := parseApplicationSet(document)
+			if err != nil {
+				return nil, err
+			}
+			documentResult, err = renderApplicationSet(ctx, appSet, opts)
+			if err != nil {
+				return nil, err
+			}
+		default:
+			if skipOtherKinds {
+				continue
+			}
+			return nil, fmt.Errorf("expected kind 'Application' or 'ApplicationSet', got '%s'", typeMeta.Kind)
+		}
+
+		result.merge(documentResult)
+	}
+
+	return result, nil
+}
+
+// merge appends the contents of other, keeping the per-Application grouping.
+func (r *TemplateResult) merge(other *TemplateResult) {
+	r.Objects = append(r.Objects, other.Objects...)
+	r.Warnings = append(r.Warnings, other.Warnings...)
+	r.SourcesProcessed += other.SourcesProcessed
+	r.ApplicationsProcessed += other.ApplicationsProcessed
+	r.Applications = append(r.Applications, other.Applications...)
 }
 
 // TemplateFromApplication processes an ArgoCD Application and returns templated manifests
@@ -287,6 +380,17 @@ resources:
 		warnings = append(warnings, condition.Message)
 	}
 
+	// The Application goes first, ahead of what it renders to. It is deliberately
+	// added after normalization: it lives in the Argo CD namespace, not in the
+	// destination namespace the rendered manifests are moved into.
+	if opts.IncludeApplications {
+		manifest, err := applicationManifest(app)
+		if err != nil {
+			return nil, err
+		}
+		dedupedObjects = append([]*unstructured.Unstructured{manifest}, dedupedObjects...)
+	}
+
 	return &TemplateResult{
 		Objects:               dedupedObjects,
 		Warnings:              warnings,
@@ -300,6 +404,100 @@ resources:
 			SourcesProcessed: len(requests),
 		}},
 	}, nil
+}
+
+// applicationManifest turns an Application into the resource you would apply to a
+// cluster. Applications generated by an ApplicationSet carry no apiVersion or kind,
+// and none of them carry a meaningful status, so both are set straight.
+func applicationManifest(app *v1alpha1.Application) (*unstructured.Unstructured, error) {
+	clean := app.DeepCopy()
+	clean.TypeMeta = metav1.TypeMeta{
+		APIVersion: v1alpha1.SchemeGroupVersion.String(),
+		Kind:       "Application",
+	}
+	clean.Status = v1alpha1.ApplicationStatus{}
+	clean.ManagedFields = nil
+
+	data, err := json.Marshal(clean)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal application %q: %w", app.Name, err)
+	}
+
+	var obj unstructured.Unstructured
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, fmt.Errorf("failed to convert application %q: %w", app.Name, err)
+	}
+
+	// Empty values the round trip adds back, which only make the output noisier.
+	unstructured.RemoveNestedField(obj.Object, "metadata", "creationTimestamp")
+	unstructured.RemoveNestedField(obj.Object, "status")
+
+	return &obj, nil
+}
+
+// manifestFiles returns the manifests below dir, sorted so that a render of the
+// same tree keeps producing the same output. Hidden directories are skipped,
+// matching how the repo-server walks a repository.
+func manifestFiles(dir string) ([]string, error) {
+	var files []string
+
+	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, fnErr error) error {
+		if fnErr != nil {
+			return fnErr
+		}
+		if entry.IsDir() {
+			// The directory being walked can itself be named ".", or be hidden.
+			if path != dir && strings.HasPrefix(entry.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Only YAML: scanning .json as well would mean reading every package.json
+		// and tsconfig.json in a repository, and Applications are not written in
+		// JSON. A JSON manifest can still be rendered by naming it with --app.
+		switch filepath.Ext(entry.Name()) {
+		case ".yaml", ".yml":
+			files = append(files, path)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan %q: %w", dir, err)
+	}
+
+	sort.Strings(files)
+
+	return files, nil
+}
+
+// splitDocuments splits multi-document YAML into its non-empty documents.
+func splitDocuments(data []byte) ([][]byte, error) {
+	var documents [][]byte
+
+	reader := k8syaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(data)))
+	for {
+		document, err := reader.Read()
+		if err == io.EOF {
+			return documents, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to split YAML documents: %w", err)
+		}
+
+		// A document holding only comments or whitespace parses as null, which is
+		// neither an Application nor an error.
+		if len(bytes.TrimSpace(document)) == 0 {
+			continue
+		}
+		var probe any
+		if err := yaml.Unmarshal(document, &probe); err == nil && probe == nil {
+			continue
+		}
+
+		documents = append(documents, document)
+	}
 }
 
 // readManifest reads a manifest from a file, or from stdin when path is "-".
