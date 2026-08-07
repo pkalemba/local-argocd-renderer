@@ -25,10 +25,21 @@ func main() {
 	var outputDir = flag.String("output-dir", "", "Write manifests to <dir>/<application>/<kind>-<name>.yaml instead of stdout")
 	var quiet = flag.Bool("quiet", false, "Suppress progress output on stderr")
 	var showVersion = flag.Bool("version", false, "Print the version and exit")
+	var doSelfUpdate = flag.Bool("self-update", false, "Replace this binary with the latest release")
+	var checkUpdate = flag.Bool("check-update", false, "Report whether a newer release exists, without installing it")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println(version)
+		return
+	}
+
+	// Handled before --app/--dir is required: updating is not a render.
+	if *doSelfUpdate || *checkUpdate {
+		if err := selfUpdate(context.Background(), version, *checkUpdate); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
