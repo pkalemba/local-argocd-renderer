@@ -1,8 +1,11 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  // semantic-release derives the next version from the commit messages, so
+  // Renovate has to write conventional ones too. Dependency updates default to
+  // the `fix` type, which makes a merged update cut a patch release.
   extends: [
     "config:recommended",
-    ":semanticCommitsDisabled",
+    ":semanticCommits",
   ],
 
   // go.mod pins the Go toolchain at the patch level, following Argo CD.

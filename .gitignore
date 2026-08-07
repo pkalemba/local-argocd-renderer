@@ -12,3 +12,6 @@ devenv.local.nix
 
 # Build output
 dist/
+
+# Node (semantic-release)
+node_modules/
