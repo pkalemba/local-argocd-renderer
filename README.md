@@ -98,6 +98,9 @@ go build ./cmd/local-argocd-renderer
 # ApplicationSets work the same way
 ./local-argocd-renderer --app examples/appset-list/appset.yaml
 
+# Render every Application and ApplicationSet in a tree
+./local-argocd-renderer --dir examples/
+
 # Feed the cluster generator with local cluster secrets
 ./local-argocd-renderer --app examples/appset-clusters/appset.yaml \
   --clusters examples/appset-clusters/clusters.yaml
@@ -111,11 +114,44 @@ cat examples/directory/app.yaml | ./local-argocd-renderer --app -
 
 | Flag | Description |
 |------|-------------|
-| `--app` | Application or ApplicationSet manifest, `-` for stdin (required) |
+| `--app` | Application or ApplicationSet manifest, `-` for stdin |
+| `--dir` | Directory to scan recursively instead of naming a single manifest |
 | `--clusters` | File or directory with Argo CD cluster secrets for the cluster generator |
+| `--include-applications` | Also emit the Application resources themselves |
 | `--output-dir` | Write `<dir>/<application>/<kind>-<name>.yaml` instead of printing to stdout |
 | `--quiet` | Suppress progress output on stderr |
 | `--version` | Print the version and exit |
+
+Exactly one of `--app` and `--dir` is required.
+
+### Scanning a directory
+
+`--dir` walks the directory for `.yaml` and `.yml` files, renders every Application and
+ApplicationSet it finds — including several per file, separated by `---` — and ignores
+documents of any other kind, so a tree of mixed manifests can be pointed at directly.
+Hidden directories are skipped. Files are rendered in sorted order, so the same tree
+always produces the same output.
+
+Naming a single manifest with `--app` is stricter: a document that is neither an
+Application nor an ApplicationSet is an error there, because the file was named
+explicitly.
+
+### Emitting the Applications themselves
+
+`--include-applications` puts the Application resource ahead of the manifests it renders
+to. This is mainly useful for ApplicationSets, where the generated Applications are
+resources you would apply in their own right and are otherwise never written down:
+
+```bash
+./local-argocd-renderer --dir apps/ --include-applications --output-dir rendered
+```
+
+```
+rendered/list-one/application-list-one.yaml
+rendered/list-one/configmap-one.yaml
+rendered/list-two/application-list-two.yaml
+rendered/list-two/configmap-two.yaml
+```
 
 ## Library
 

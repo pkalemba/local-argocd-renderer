@@ -14,7 +14,8 @@
       "@semantic-release/github",
       {
         "assets": [
-          { "path": "dist/*", "label": "binaries and checksums" }
+          { "path": "dist/local-argocd-renderer_*" },
+          { "path": "dist/checksums.txt" }
         ],
         "successComment": false,
         "failComment": false
