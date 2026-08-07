@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-expose
+data:
+  domain: {{ index .Values "istio-expose" "domain" "name" | quote }}
+  family: {{ index .Values "istio-expose" "family" | quote }}

@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: int-cluster
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+    cluster.com/family: int
+    cluster.com/internal-domain: int.example.internal
+    cluster.com/external-domain: int.example.com
+stringData:
+  name: int-cluster
+  server: https://int.example.internal:6443
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ext-cluster
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+    cluster.com/family: ext
+    cluster.com/internal-domain: ext.example.internal
+    cluster.com/external-domain: ext.example.com
+stringData:
+  name: ext-cluster
+  server: https://ext.example.com:6443

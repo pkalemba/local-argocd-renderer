@@ -1,0 +1,34 @@
+# Render with the cluster secrets from this directory:
+#   local-argocd-renderer --app examples/appset-clusters/appset.yaml \
+#     --clusters examples/appset-clusters/clusters.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: clusters-appset
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - clusters:
+        # Selects on the labels of the cluster secret. Any non-empty selector also
+        # drops the local in-cluster entry, which carries no labels to match on.
+        selector:
+          matchExpressions:
+            - key: environment
+              operator: In
+              values: [staging, production]
+  template:
+    metadata:
+      name: clusters-{{ .nameNormalized }}
+      labels:
+        # The labels of the cluster secret are exposed as parameters too.
+        environment: '{{ .metadata.labels.environment }}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/myorg/myrepo
+        path: examples/appset-clusters/input/{{ .metadata.labels.environment }}
+      destination:
+        server: '{{ .server }}'
+        namespace: '{{ .name }}-namespace'

@@ -1,0 +1,46 @@
+# Cluster labels driving the Helm values of the generated Applications:
+#   local-argocd-renderer --app examples/appset-clusters-helm/appset.yaml \
+#     --clusters examples/appset-clusters-helm/clusters.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: clusters-helm-appset
+spec:
+  goTemplate: true
+  generators:
+    - clusters:
+        # Only the clusters carrying the family label; the selector also keeps the
+        # local in-cluster entry, which has no labels, out of the result.
+        selector:
+          matchExpressions:
+            - key: cluster.com/family
+              operator: Exists
+        # The generator's own values are templated per cluster and land under
+        # `.values`, next to the built-in cluster parameters.
+        values:
+          family: '{{ index .metadata.labels "cluster.com/family" }}'
+  template:
+    metadata:
+      name: istio-expose-{{ .nameNormalized }}
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/myorg/myrepo
+        path: examples/appset-clusters-helm/input
+        helm:
+          releaseName: istio-expose
+          values: |
+            {{- $clusterFamily := index .metadata.labels "cluster.com/family" }}
+            {{- $internalClusterDomain := index .metadata.labels "cluster.com/internal-domain" }}
+            {{- $externalClusterDomain := index .metadata.labels "cluster.com/external-domain" }}
+            istio-expose:
+              family: {{ .values.family }}
+              domain:
+              {{- if eq $clusterFamily "int" }}
+                name: "test.{{ $internalClusterDomain }}"
+              {{- else }}
+                name: "test.{{ $externalClusterDomain }}"
+              {{- end }}
+      destination:
+        server: '{{ .server }}'
+        namespace: '{{ .name }}-namespace'

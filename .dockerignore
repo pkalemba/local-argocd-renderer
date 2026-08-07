@@ -1,0 +1,10 @@
+.git
+.github
+.devenv*
+.direnv
+.envrc
+devenv.local.nix
+dist
+local-argocd-renderer
+Dockerfile
+README.md

@@ -1,0 +1,22 @@
+# Generated 2 manifests from 2 sources (2 after deduplication)
+# Rendered 2 applications
+---
+apiVersion: v1
+data:
+  environment: production
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: clusters-production
+  name: cluster-info
+  namespace: production-namespace
+---
+apiVersion: v1
+data:
+  environment: staging
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: clusters-staging
+  name: cluster-info
+  namespace: staging-namespace
