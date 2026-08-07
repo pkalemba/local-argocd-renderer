@@ -1,4 +1,4 @@
-# Generated 3 manifests from 1 sources (3 after deduplication)
+# Generated 4 manifests from 1 sources (4 after deduplication)
 ---
 apiVersion: v1
 data:
@@ -39,6 +39,25 @@ spec:
         name: helm-example
         ports:
         - containerPort: 80
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    helm.sh/hook: test
+  labels:
+    app.kubernetes.io/instance: helm-example-app
+  name: helm-example-app-test-connection
+  namespace: helm-namespace
+spec:
+  containers:
+  - args:
+    - helm-example-app:80
+    command:
+    - wget
+    image: busybox
+    name: wget
+  restartPolicy: Never
 ---
 apiVersion: v1
 kind: Service
