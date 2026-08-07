@@ -118,7 +118,7 @@ cat examples/directory/app.yaml | ./local-argocd-renderer --app -
 | `--dir` | Directory to scan recursively instead of naming a single manifest |
 | `--clusters` | File or directory with Argo CD cluster secrets for the cluster generator |
 | `--include-applications` | Also emit the Application resources themselves |
-| `--skip-tests` | Pass `--skip-tests` to every Helm source, dropping the test hooks charts ship |
+| `--include-tests` | Keep the test hooks Helm charts ship, which are dropped by default |
 | `--output-dir` | Write `<dir>/<application>/<kind>-<name>.yaml` instead of printing to stdout |
 | `--quiet` | Suppress progress output on stderr |
 | `--version` | Print the version and exit |
@@ -140,10 +140,10 @@ explicitly.
 ### Chart tests
 
 Charts commonly ship test hooks — a Pod annotated `helm.sh/hook: test` — and
-`helm template` renders them like any other manifest. Argo CD does the same, and so does
-this renderer by default, because the point is to show what the cluster would get.
+`helm template` renders them like any other manifest. They are dropped by default here,
+because they are not part of what the cluster runs and are noise in a diff.
 
-Argo CD's own switch for that is per source, and is honoured here without any extra flag:
+That is the same as setting Argo CD's per-source switch on every Application:
 
 ```yaml
 spec:
@@ -152,16 +152,16 @@ spec:
       skipTests: true
 ```
 
-`--skip-tests` turns it on for every Helm source at once, which is the practical option
-when the alternative is editing every Application:
+`--include-tests` hands the decision back to the manifests: the hooks are rendered
+unless a source asks for them to be skipped with the field above.
 
 ```bash
-./local-argocd-renderer --dir apps/ --skip-tests
+./local-argocd-renderer --dir apps/ --include-tests
 ```
 
-Non-Helm sources are unaffected — the flag is applied only once a source has been
-identified as Helm, because in Argo CD's model a non-empty `helm:` block is itself what
-marks a source as a chart.
+Non-Helm sources are unaffected either way — the tests are only skipped once a source has
+been identified as Helm, because in Argo CD's model a non-empty `helm:` block is itself
+what marks a source as a chart.
 
 ### Emitting the Applications themselves
 

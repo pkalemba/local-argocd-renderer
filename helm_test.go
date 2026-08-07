@@ -30,23 +30,10 @@ func renderedNames(t *testing.T, opts TemplateOptions) map[string]bool {
 	return names
 }
 
-// The default has to match what Argo CD renders, test hooks included.
-func TestHelmTestsAreRenderedByDefault(t *testing.T) {
+func TestHelmTestsAreSkippedByDefault(t *testing.T) {
 	names := renderedNames(t, TemplateOptions{
 		ApplicationFile: "examples/helm/app.yaml",
 		RepoRoot:        ".",
-	})
-
-	if !names[testHookName] {
-		t.Errorf("Expected the chart's test hook to be rendered, got %v", names)
-	}
-}
-
-func TestSkipHelmTests(t *testing.T) {
-	names := renderedNames(t, TemplateOptions{
-		ApplicationFile: "examples/helm/app.yaml",
-		RepoRoot:        ".",
-		SkipHelmTests:   true,
 	})
 
 	if names[testHookName] {
@@ -61,9 +48,21 @@ func TestSkipHelmTests(t *testing.T) {
 	}
 }
 
+func TestIncludeHelmTests(t *testing.T) {
+	names := renderedNames(t, TemplateOptions{
+		ApplicationFile:  "examples/helm/app.yaml",
+		RepoRoot:         ".",
+		IncludeHelmTests: true,
+	})
+
+	if !names[testHookName] {
+		t.Errorf("Expected the chart's test hook to be rendered, got %v", names)
+	}
+}
+
 // A non-zero helm block is what marks a source as Helm, so setting SkipTests on
 // a source that is not one would retype it and change what gets rendered.
-func TestSkipHelmTestsLeavesOtherSourceTypesAlone(t *testing.T) {
+func TestSkippingHelmTestsLeavesOtherSourceTypesAlone(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		appPath string
@@ -80,7 +79,7 @@ func TestSkipHelmTestsLeavesOtherSourceTypesAlone(t *testing.T) {
 				}
 			}
 
-			opts := TemplateOptions{ApplicationFile: tc.appPath, RepoRoot: ".", SkipHelmTests: true}
+			opts := TemplateOptions{ApplicationFile: tc.appPath, RepoRoot: "."}
 			result, err := Template(context.Background(), opts)
 			if err != nil {
 				t.Fatalf("Failed to template application: %v", err)
@@ -93,7 +92,7 @@ func TestSkipHelmTestsLeavesOtherSourceTypesAlone(t *testing.T) {
 				}
 			}
 			if !found {
-				t.Errorf("Expected %q to be rendered unchanged with SkipHelmTests set", tc.object)
+				t.Errorf("Expected %q to be rendered unchanged while Helm tests are skipped", tc.object)
 			}
 		})
 	}

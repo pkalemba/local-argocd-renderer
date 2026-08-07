@@ -55,10 +55,11 @@ type TemplateOptions struct {
 	// manifests it renders to, so that the Applications an ApplicationSet generates
 	// come out next to their contents.
 	IncludeApplications bool
-	// SkipHelmTests passes --skip-tests to every Helm source, dropping the test
-	// hooks charts ship. It is the equivalent of setting spec.source.helm.skipTests
-	// on each Application, which Argo CD honours on its own.
-	SkipHelmTests bool
+	// IncludeHelmTests keeps the test hooks charts ship. They are dropped by
+	// default, which is the equivalent of setting spec.source.helm.skipTests on
+	// every Application; with this set the per-source field decides on its own,
+	// the way Argo CD reads it.
+	IncludeHelmTests bool
 }
 
 // TemplateResult contains the results of the templating process
@@ -295,14 +296,15 @@ func renderApplication(ctx context.Context, app *v1alpha1.Application, opts Temp
 			return nil, fmt.Errorf("error getting app source type: %w", err)
 		}
 
-		// helm template renders a chart's test hooks along with everything else.
-		// Argo CD has a per-source switch for that, and this turns it on for every
-		// chart without having to edit each Application.
+		// helm template renders a chart's test hooks along with everything else,
+		// and they are noise in a diff of what the cluster runs, so they are dropped
+		// unless asked for. IncludeHelmTests leaves the source untouched instead, so
+		// the per-source spec.source.helm.skipTests field decides.
 		//
 		// It is set only once the source is known to be Helm: a non-zero helm block
 		// is itself what marks a source as Helm, so setting it upfront would retype
 		// a Kustomize or directory source.
-		if opts.SkipHelmTests && appSourceType == v1alpha1.ApplicationSourceTypeHelm {
+		if !opts.IncludeHelmTests && appSourceType == v1alpha1.ApplicationSourceTypeHelm {
 			if q.ApplicationSource.Helm == nil {
 				q.ApplicationSource.Helm = &v1alpha1.ApplicationSourceHelm{}
 			}
