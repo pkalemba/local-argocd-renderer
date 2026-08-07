@@ -28,16 +28,51 @@ The official Argo CD CLI requires a server connection (`argocd app manifests` fa
 ## Installation
 
 Pre-built binaries for Linux, macOS and Windows on amd64/arm64 are attached to
-every [release](../../releases), and a multi-platform container image is published
-to `ghcr.io/pkalemba/local-argocd-renderer`. Both are produced by the release
-workflow — see [Releasing](#releasing).
+every [release](../../releases), xz-compressed:
+
+```bash
+curl -fsSLO https://github.com/pkalemba/local-argocd-renderer/releases/latest/download/local-argocd-renderer_vX.Y.Z_linux_amd64.xz
+unxz local-argocd-renderer_vX.Y.Z_linux_amd64.xz
+chmod +x local-argocd-renderer_vX.Y.Z_linux_amd64
+```
+
+A multi-platform container image is published to `ghcr.io/pkalemba/local-argocd-renderer`,
+bundling the `helm` and `kustomize` the renderer shells out to:
 
 ```bash
 docker run --rm -v "$PWD:/repo" ghcr.io/pkalemba/local-argocd-renderer \
   --app examples/directory/app.yaml
 ```
 
-The image bundles `helm` and `kustomize`, which the renderer shells out to.
+Both are produced by the release workflow — see [Releasing](#releasing).
+
+### Updating
+
+A released binary can replace itself:
+
+```bash
+local-argocd-renderer --check-update   # just report
+local-argocd-renderer --self-update    # download, verify, replace
+```
+
+The asset is checked against the release's `checksums.txt` before anything is written,
+and the file mode is preserved. Set `GITHUB_TOKEN` if you run into GitHub's 60
+requests/hour anonymous limit; an update costs about three.
+
+This only works on binaries built from a release tag. Builds from source carry a
+`git describe` version like `v1.1.0-3-gabc1234`, which semver reads as a *prerelease* of
+`v1.1.0` — older than the tag it was built from — so self-updating one would move it
+backwards. Those are refused. The same goes for binaries under `/nix/store` or a Homebrew
+Cellar, which belong to the package manager that installed them.
+
+### Why the binary is large
+
+Around 75 MB uncompressed. It links Argo CD's rendering libraries, which pull in
+`k8s.io/api`, `k8s.io/kubernetes` and `client-go`; `reposerver/repository` alone — the
+package the renderer is built on — accounts for 67 MB of that. Everything else in this
+repository adds roughly 7 MB, so there is no meaningful trimming to do short of
+reimplementing what Argo CD already does. The release assets are compressed instead,
+which takes them to about 15 MB.
 
 ### Releasing
 
@@ -122,6 +157,8 @@ cat examples/directory/app.yaml | ./local-argocd-renderer --app -
 | `--output-dir` | Write `<dir>/<application>/<kind>-<name>.yaml` instead of printing to stdout |
 | `--quiet` | Suppress progress output on stderr |
 | `--version` | Print the version and exit |
+| `--check-update` | Report whether a newer release exists, without installing it |
+| `--self-update` | Replace this binary with the latest release |
 
 Exactly one of `--app` and `--dir` is required.
 

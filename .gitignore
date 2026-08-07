@@ -1,4 +1,6 @@
-local-argocd-renderer
+# Anchored to the repo root: unanchored, this also matched the
+# cmd/local-argocd-renderer directory and silently ignored new files in it.
+/local-argocd-renderer
 
 # Devenv
 .devenv*

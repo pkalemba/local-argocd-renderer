@@ -13,6 +13,11 @@ GO      ?= go
 LDFLAGS := -s -w -X main.version=$(VERSION)
 GOBUILD := CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)'
 
+# Release assets are compressed: the binary links the Argo CD and Kubernetes
+# libraries, which puts it at ~75 MB, and xz takes that to ~15 MB. Self-update
+# decompresses on the fly; by hand it is `unxz <file>`.
+COMPRESS ?= xz -9 -T0 -f
+
 .PHONY: all
 all: test build
 
@@ -47,8 +52,11 @@ dist: clean-dist
 		echo "building $$out"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags '$(LDFLAGS)' \
 			-o "$$out" ./cmd/local-argocd-renderer || exit 1; \
+		$(COMPRESS) "$$out" || exit 1; \
 	done
 
+# The checksums cover the compressed assets, because that is what gets downloaded:
+# self-update verifies the asset before decompressing it.
 .PHONY: checksums
 checksums: dist
 	cd $(DIST) && sha256sum * > checksums.txt
