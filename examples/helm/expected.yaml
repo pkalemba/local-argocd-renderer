@@ -1,14 +1,4 @@
-# Generated 3 manifests from 1 sources (3 after deduplication)
----
-apiVersion: v1
-data:
-  message: Hello from Helm example!
-kind: ConfigMap
-metadata:
-  labels:
-    app.kubernetes.io/instance: helm-example-app
-  name: helm-example-config
-  namespace: helm-namespace
+# Generated 3 manifests
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -39,6 +29,16 @@ spec:
         name: helm-example
         ports:
         - containerPort: 80
+---
+apiVersion: v1
+data:
+  message: Hello from Helm example!
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: helm-example-app
+  name: helm-example-config
+  namespace: helm-namespace
 ---
 apiVersion: v1
 kind: Service

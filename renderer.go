@@ -3,6 +3,7 @@ package renderer
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,7 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -259,6 +260,16 @@ func renderApplicationSet(ctx context.Context, appSet *v1alpha1.ApplicationSet, 
 		return nil, err
 	}
 
+	// The generators hand back Applications in whatever order their inputs came out
+	// in, and the cluster generator's inputs come from a map — so without this the
+	// order of a multi-cluster render changed between runs.
+	slices.SortFunc(apps, func(a, b v1alpha1.Application) int {
+		return cmp.Or(
+			cmp.Compare(a.Namespace, b.Namespace),
+			cmp.Compare(a.Name, b.Name),
+		)
+	})
+
 	result := &TemplateResult{Warnings: warnings}
 	for i := range apps {
 		appResult, err := renderApplication(ctx, &apps[i], opts)
@@ -400,6 +411,8 @@ resources:
 		warnings = append(warnings, condition.Message)
 	}
 
+	sortObjects(dedupedObjects)
+
 	// The Application goes first, ahead of what it renders to. It is deliberately
 	// added after normalization: it lives in the Argo CD namespace, not in the
 	// destination namespace the rendered manifests are moved into.
@@ -424,6 +437,49 @@ resources:
 			SourcesProcessed: len(requests),
 		}},
 	}, nil
+}
+
+// sortObjects puts the rendered manifests in a stable order.
+//
+// NormalizeTargetObjects collects its result by ranging over a map, so it hands
+// back a different order on every run. That makes `render | git diff` churn for no
+// reason, which defeats the point of rendering locally in the first place.
+func sortObjects(objects []*unstructured.Unstructured) {
+	slices.SortFunc(objects, func(a, b *unstructured.Unstructured) int {
+		return cmp.Or(
+			cmp.Compare(a.GetAPIVersion(), b.GetAPIVersion()),
+			cmp.Compare(a.GetKind(), b.GetKind()),
+			cmp.Compare(a.GetNamespace(), b.GetNamespace()),
+			cmp.Compare(a.GetName(), b.GetName()),
+		)
+	})
+}
+
+// WriteManifests writes the rendered objects as a YAML stream. The CLI and the
+// golden tests both go through here, so what the tests compare against is what the
+// CLI actually prints.
+func WriteManifests(w io.Writer, result *TemplateResult) error {
+	if _, err := fmt.Fprintf(w, "# Generated %d manifests\n---\n", len(result.Objects)); err != nil {
+		return err
+	}
+
+	for i, object := range result.Objects {
+		if i > 0 {
+			if _, err := fmt.Fprintln(w, "---"); err != nil {
+				return err
+			}
+		}
+
+		manifest, err := yaml.Marshal(object.Object)
+		if err != nil {
+			return fmt.Errorf("failed to marshal %s %q: %w", object.GetKind(), object.GetName(), err)
+		}
+		if _, err := w.Write(manifest); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // applicationManifest turns an Application into the resource you would apply to a
@@ -487,7 +543,7 @@ func manifestFiles(dir string) ([]string, error) {
 		return nil, fmt.Errorf("failed to scan %q: %w", dir, err)
 	}
 
-	sort.Strings(files)
+	slices.Sort(files)
 
 	return files, nil
 }

@@ -84,26 +84,9 @@ func main() {
 		return
 	}
 
-	printManifests(result)
-}
-
-func printManifests(result *renderer.TemplateResult) {
-	fmt.Printf("# Generated %d manifests\n", len(result.Objects))
-	fmt.Println("---")
-
-	// Parse and output manifests
-	for i, object := range result.Objects {
-		if i > 0 {
-			fmt.Println("---")
-		}
-
-		yamlBytes, err := yaml.Marshal(object)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-		fmt.Printf("%s", yamlBytes)
+	if err := renderer.WriteManifests(os.Stdout, result); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 }
 
@@ -126,26 +109,27 @@ func saveManifestsToFiles(objects []*unstructured.Unstructured, outputDir, appNa
 		return fmt.Errorf("failed to create app directory: %w", err)
 	}
 
-	// Group objects by kind for better organization
-	kindCounts := make(map[string]int)
+	// Counted per kind *and* name. Counting per kind alone gave the second distinct
+	// object of a kind a "-2" suffix, which then collided with an object genuinely
+	// named "...-2" and silently overwrote it.
+	seen := make(map[string]int)
 
 	for _, object := range objects {
 		kind := object.GetKind()
 		if kind == "" {
 			kind = "unknown"
 		}
+		name := object.GetName()
 
-		kindCounts[kind]++
+		base := strings.ToLower(kind)
+		if name != "" {
+			base += "-" + name
+		}
 
-		var filename string
-		if name := object.GetName(); name != "" {
-			if kindCounts[kind] == 1 {
-				filename = fmt.Sprintf("%s-%s.yaml", strings.ToLower(kind), name)
-			} else {
-				filename = fmt.Sprintf("%s-%s-%d.yaml", strings.ToLower(kind), name, kindCounts[kind])
-			}
-		} else {
-			filename = fmt.Sprintf("%s-%d.yaml", strings.ToLower(kind), kindCounts[kind])
+		seen[base]++
+		filename := base + ".yaml"
+		if count := seen[base]; count > 1 {
+			filename = fmt.Sprintf("%s-%d.yaml", base, count)
 		}
 
 		filePath := filepath.Join(appDir, filename)
