@@ -369,7 +369,7 @@ spec:
 func TestTemplateFromApplicationSetYAML(t *testing.T) {
 	ctx := context.Background()
 
-	result, err := TemplateFromApplicationSetYAML(ctx, listAppSet, ".")
+	result, err := TemplateFromApplicationSetYAML(ctx, listAppSet, TemplateOptions{RepoRoot: "."})
 	if err != nil {
 		t.Fatalf("TemplateFromApplicationSetYAML failed: %v", err)
 	}

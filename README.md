@@ -224,7 +224,7 @@ import (
     "context"
     "log"
 
-    "github.com/lorenzbischof/local-argocd-renderer/pkg/renderer"
+    renderer "github.com/lorenzbischof/local-argocd-renderer"
 )
 
 ctx := context.Background()
@@ -242,8 +242,12 @@ if err != nil {
 // Process result.Objects
 ```
 
+The package lives at the module root and is named `renderer`, hence the named
+import above.
+
 `TemplateFromApplication` and `TemplateFromApplicationSet` are available when the
-kind is known up front, along with their `...YAML` variants. To only expand an
+kind is known up front, along with their `...YAML` variants, which take the manifest
+as a string. All of them take the same `TemplateOptions`. To only expand an
 ApplicationSet into Applications without rendering them, use
 `renderer.GenerateApplications`.
 

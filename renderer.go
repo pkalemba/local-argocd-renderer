@@ -232,24 +232,31 @@ func TemplateFromApplicationSet(ctx context.Context, opts TemplateOptions) (*Tem
 	return renderApplicationSet(ctx, appSet, opts)
 }
 
-// TemplateFromApplicationYAML processes an ArgoCD Application from YAML content
-func TemplateFromApplicationYAML(ctx context.Context, yamlContent string, repoRoot string) (*TemplateResult, error) {
+// TemplateFromApplicationYAML processes an ArgoCD Application from YAML content.
+//
+// It takes the same options as every other entry point. It used to take a bare
+// repoRoot and build the options itself, which silently discarded the rest of them
+// — a caller asking for Helm tests, or for a manifest size cap, got neither.
+func TemplateFromApplicationYAML(ctx context.Context, yamlContent string, opts TemplateOptions) (*TemplateResult, error) {
 	app, err := parseApplication([]byte(yamlContent))
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Application CRD: %w", err)
 	}
 
-	return renderApplication(ctx, app, TemplateOptions{RepoRoot: repoRoot})
+	return renderApplication(ctx, app, opts)
 }
 
-// TemplateFromApplicationSetYAML processes an ArgoCD ApplicationSet from YAML content
-func TemplateFromApplicationSetYAML(ctx context.Context, yamlContent string, repoRoot string) (*TemplateResult, error) {
+// TemplateFromApplicationSetYAML processes an ArgoCD ApplicationSet from YAML
+// content. As above, it takes the full options — dropping them here also meant an
+// ApplicationSet with a cluster generator never saw ClustersFile, so it rendered
+// against the in-cluster entry alone.
+func TemplateFromApplicationSetYAML(ctx context.Context, yamlContent string, opts TemplateOptions) (*TemplateResult, error) {
 	appSet, err := parseApplicationSet([]byte(yamlContent))
 	if err != nil {
 		return nil, fmt.Errorf("error parsing ApplicationSet CRD: %w", err)
 	}
 
-	return renderApplicationSet(ctx, appSet, TemplateOptions{RepoRoot: repoRoot})
+	return renderApplicationSet(ctx, appSet, opts)
 }
 
 // renderApplicationSet expands an ApplicationSet into Applications and renders each
@@ -335,9 +342,9 @@ func renderApplication(ctx context.Context, app *v1alpha1.Application, opts Temp
 			appPath = overlayDir
 		}
 
-		maxSize := resource.MustParse("10Mi")
-		if opts.MaxManifestSize != "" {
-			maxSize = resource.MustParse(opts.MaxManifestSize)
+		maxSize, err := maxManifestSize(opts.MaxManifestSize)
+		if err != nil {
+			return nil, err
 		}
 
 		// Call the core GenerateManifests function directly
@@ -651,6 +658,27 @@ func parseApplicationSet(data []byte) (*v1alpha1.ApplicationSet, error) {
 	}
 
 	return &appSet, nil
+}
+
+// defaultMaxManifestSize is the repo-server's own default for the combined size of
+// a directory source's manifests — argocd-repo-server's
+// --max-combined-directory-manifests-size, which defaults to 10M.
+const defaultMaxManifestSize = "10M"
+
+// maxManifestSize parses the configured cap, or falls back to the repo-server's.
+// It used to go through resource.MustParse, so a caller's typo took the process
+// down with a panic from inside a Kubernetes helper rather than being reported.
+func maxManifestSize(configured string) (resource.Quantity, error) {
+	if configured == "" {
+		return resource.MustParse(defaultMaxManifestSize), nil
+	}
+
+	size, err := resource.ParseQuantity(configured)
+	if err != nil {
+		return resource.Quantity{}, fmt.Errorf("invalid MaxManifestSize %q: %w", configured, err)
+	}
+
+	return size, nil
 }
 
 func repoRootOrDefault(repoRoot string) string {
