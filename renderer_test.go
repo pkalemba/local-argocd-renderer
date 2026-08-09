@@ -2,63 +2,27 @@ package renderer
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"flag"
 	"os"
 	"strings"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/yaml"
-
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// formatOutput formats the TemplateResult the same way as the CLI
-func formatOutput(result *TemplateResult) string {
+// updateGolden rewrites the golden files instead of comparing against them, for
+// when a change to the renderer is meant to change its output.
+var updateGolden = flag.Bool("update", false, "rewrite the golden files")
+
+// formatOutput renders the result exactly as the CLI does. It deliberately does no
+// sorting of its own: the renderer is responsible for producing a stable order, and
+// sorting here would hide it if it stopped doing so.
+func formatOutput(t *testing.T, result *TemplateResult) string {
+	t.Helper()
+
 	var output strings.Builder
-
-	// Header line
-	fmt.Fprintf(&output, "# Generated %d manifests from %d sources (%d after deduplication)\n", len(result.Objects), result.SourcesProcessed, len(result.Objects))
-	if result.ApplicationsProcessed > 1 {
-		fmt.Fprintf(&output, "# Rendered %d applications\n", result.ApplicationsProcessed)
-	}
-	output.WriteString("---\n")
-
-	// Sort manifests for consistent ordering (by kind, then by name)
-	sortedObjects := make([]*unstructured.Unstructured, len(result.Objects))
-	copy(sortedObjects, result.Objects)
-
-	// Simple sort by kind, then by name for consistency
-	for i := 0; i < len(sortedObjects)-1; i++ {
-		for j := i + 1; j < len(sortedObjects); j++ {
-			kind1 := sortedObjects[i].GetKind()
-			kind2 := sortedObjects[j].GetKind()
-			name1 := sortedObjects[i].GetName()
-			name2 := sortedObjects[j].GetName()
-
-			// Sort by kind first, then by name
-			if kind1 > kind2 || (kind1 == kind2 && name1 > name2) {
-				sortedObjects[i], sortedObjects[j] = sortedObjects[j], sortedObjects[i]
-			}
-		}
-	}
-
-	// Manifests
-	for i, obj := range sortedObjects {
-		if i > 0 {
-			output.WriteString("---\n")
-		}
-
-		yamlBytes, err := yaml.Marshal(obj.Object)
-		if err != nil {
-			// If YAML conversion fails, output JSON
-			jsonBytes, _ := json.Marshal(obj.Object)
-			output.WriteString(string(jsonBytes))
-			continue
-		}
-
-		output.WriteString(string(yamlBytes))
+	if err := WriteManifests(&output, result); err != nil {
+		t.Fatalf("Failed to write manifests: %v", err)
 	}
 
 	return output.String()
@@ -181,33 +145,31 @@ func TestGoldenExamples(t *testing.T) {
 				t.Fatalf("Failed to template application: %v", err)
 			}
 
-			// Format output the same way as CLI
-			output := formatOutput(result)
+			output := formatOutput(t, result)
 
-			// Check if expected output exists
-			if _, err := os.Stat(tc.expectedPath); os.IsNotExist(err) {
-				// Write the output as the expected golden file
-				if err := os.WriteFile(tc.expectedPath, []byte(output), 0644); err != nil {
-					t.Fatalf("Failed to write expected output: %v", err)
+			if *updateGolden {
+				if err := os.WriteFile(tc.expectedPath, []byte(output), 0o644); err != nil {
+					t.Fatalf("Failed to write %s: %v", tc.expectedPath, err)
 				}
-				t.Logf("Created golden file: %s", tc.expectedPath)
-			} else {
-				// Read the expected output
-				expectedBytes, err := os.ReadFile(tc.expectedPath)
-				if err != nil {
-					t.Fatalf("Failed to read expected output: %v", err)
-				}
-				expected := string(expectedBytes)
+				t.Logf("Wrote golden file: %s", tc.expectedPath)
+				return
+			}
 
-				// Compare outputs
-				if strings.TrimSpace(output) != strings.TrimSpace(expected) {
-					t.Errorf("Output does not match expected golden file")
+			// A missing golden used to be written out and the test passed, so a
+			// deleted golden — or a new case whose golden was never committed —
+			// could never fail. Only -update writes them now.
+			expectedBytes, err := os.ReadFile(tc.expectedPath)
+			if err != nil {
+				t.Fatalf("Failed to read %s (run `go test -update` to create it): %v", tc.expectedPath, err)
+			}
+			expected := string(expectedBytes)
 
-					dmp := diffmatchpatch.New()
-					diffs := dmp.DiffMain(expected, output, false)
-					diffText := dmp.DiffPrettyText(diffs)
-					t.Errorf("Diff:\n%s", diffText)
-				}
+			if strings.TrimSpace(output) != strings.TrimSpace(expected) {
+				t.Errorf("Output does not match %s", tc.expectedPath)
+
+				dmp := diffmatchpatch.New()
+				diffs := dmp.DiffMain(expected, output, false)
+				t.Errorf("Diff:\n%s", dmp.DiffPrettyText(diffs))
 			}
 		})
 	}

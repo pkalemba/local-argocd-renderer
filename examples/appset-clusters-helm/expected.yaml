@@ -1,5 +1,4 @@
-# Generated 2 manifests from 2 sources (2 after deduplication)
-# Rendered 2 applications
+# Generated 2 manifests
 ---
 apiVersion: v1
 data:

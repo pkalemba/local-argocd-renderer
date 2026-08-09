@@ -1,4 +1,4 @@
-# Generated 1 manifests from 1 sources (1 after deduplication)
+# Generated 1 manifests
 ---
 apiVersion: apps/v1
 kind: Deployment
