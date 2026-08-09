@@ -13,14 +13,7 @@ import (
 func manyObjects(t *testing.T) TemplateOptions {
 	t.Helper()
 
-	// Created under the repository root rather than in t.TempDir(): source paths are
-	// resolved relative to the process working directory, so a fixture outside it
-	// cannot be rendered.
-	root, err := os.MkdirTemp(".", "determinism-*")
-	if err != nil {
-		t.Fatalf("Failed to create a fixture directory: %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll(root) })
+	root := t.TempDir()
 
 	input := filepath.Join(root, "input")
 	if err := os.MkdirAll(input, 0o755); err != nil {
@@ -48,14 +41,14 @@ spec:
     server: https://kubernetes.default.svc
     namespace: default
 `
-	app = strings.Replace(app, "PATHPLACEHOLDER", filepath.ToSlash(input), 1)
+	app = strings.Replace(app, "PATHPLACEHOLDER", "input", 1)
 
 	appPath := filepath.Join(root, "app.yaml")
 	if err := os.WriteFile(appPath, []byte(app), 0o644); err != nil {
 		t.Fatalf("Failed to write %s: %v", appPath, err)
 	}
 
-	return TemplateOptions{ApplicationFile: appPath, RepoRoot: "."}
+	return TemplateOptions{ApplicationFile: appPath, RepoRoot: root}
 }
 
 // The renderer exists so that its output can be diffed. Deduplication collects its

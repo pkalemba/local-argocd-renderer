@@ -29,6 +29,7 @@ import (
 	"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/argoproj/argo-cd/v3/reposerver/apiclient"
 	"github.com/argoproj/argo-cd/v3/reposerver/repository"
+	argopath "github.com/argoproj/argo-cd/v3/util/app/path"
 	"github.com/argoproj/argo-cd/v3/util/argo"
 	"github.com/argoproj/argo-cd/v3/util/git"
 )
@@ -296,7 +297,12 @@ func renderApplicationSet(ctx context.Context, appSet *v1alpha1.ApplicationSet, 
 
 // renderApplication renders every source of a single Application.
 func renderApplication(ctx context.Context, app *v1alpha1.Application, opts TemplateOptions) (*TemplateResult, error) {
-	requests, err := buildRequestsFromApplication(app)
+	repoRoot, err := absRepoRoot(opts.RepoRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	requests, err := buildRequestsFromApplication(app, repoRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -305,9 +311,8 @@ func renderApplication(ctx context.Context, app *v1alpha1.Application, opts Temp
 	var warnings []string
 
 	// Process each source
-	for sourceIndex, q := range requests {
-		appPath := q.ApplicationSource.Path
-		repoRoot := repoRootOrDefault(opts.RepoRoot)
+	for sourceIndex, source := range requests {
+		q, appPath := source.request, source.appPath
 
 		appSourceType, err := repository.GetAppSourceType(ctx, q.ApplicationSource, appPath, repoRoot, q.AppName, q.EnabledSourceTypes, []string{}, []string{})
 		if err != nil {
@@ -688,13 +693,37 @@ func repoRootOrDefault(repoRoot string) string {
 	return repoRoot
 }
 
-func buildRequestsFromApplication(app *v1alpha1.Application) ([]*apiclient.ManifestRequest, error) {
+// absRepoRoot resolves the checkout root to an absolute path, which is what the
+// repo-server works in throughout. argopath.Path's containment check compares the
+// joined path against the root as a string prefix, and a relative root like "."
+// never matches one — so every path would be reported as outside the repo.
+func absRepoRoot(repoRoot string) (string, error) {
+	absolute, err := filepath.Abs(repoRootOrDefault(repoRoot))
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve RepoRoot %q: %w", repoRoot, err)
+	}
+
+	return absolute, nil
+}
+
+// sourceRequest pairs a manifest request with the directory the source was
+// resolved to on disk.
+type sourceRequest struct {
+	request *apiclient.ManifestRequest
+	// appPath is where the source's files actually live: spec.source.path resolved
+	// against the repo root, or the cache directory for a Helm chart pulled from a
+	// registry — which is outside the repo entirely and so is not resolved against
+	// it.
+	appPath string
+}
+
+func buildRequestsFromApplication(app *v1alpha1.Application, repoRoot string) ([]sourceRequest, error) {
 	sources := app.Spec.GetSources()
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("no sources found in application spec")
 	}
 
-	var requests []*apiclient.ManifestRequest
+	var requests []sourceRequest
 
 	for i, source := range sources {
 		if source.RepoURL == "" {
@@ -703,6 +732,7 @@ func buildRequestsFromApplication(app *v1alpha1.Application) ([]*apiclient.Manif
 
 		// Handle remote Helm charts by downloading them to a temporary directory
 		modifiedSource := sources[i]
+		var appPath string
 		if source.IsHelm() {
 			chartDir, err := downloadHelmChart(source.RepoURL, source.Chart, source.TargetRevision)
 			if err != nil {
@@ -713,6 +743,19 @@ func buildRequestsFromApplication(app *v1alpha1.Application) ([]*apiclient.Manif
 			modifiedSource = sources[i]
 			modifiedSource.Path = chartDir
 			modifiedSource.Chart = "" // Clear chart field since we're now using a local path
+			appPath = chartDir
+		} else {
+			// argopath.Path is what the repo-server resolves a source's path with:
+			// it joins the path onto the checkout root and refuses one that is
+			// absolute, escapes the root, or is not a directory. Using the path from
+			// the manifest as-is meant it was read relative to the process's working
+			// directory instead, so RepoRoot only ever worked by coincidence — when
+			// the caller happened to already be standing in the repo.
+			resolved, err := argopath.Path(repoRoot, source.Path)
+			if err != nil {
+				return nil, fmt.Errorf("source[%d]: %w", i, err)
+			}
+			appPath = resolved
 		}
 
 		req := &apiclient.ManifestRequest{
@@ -735,7 +778,7 @@ func buildRequestsFromApplication(app *v1alpha1.Application) ([]*apiclient.Manif
 			HasMultipleSources: len(sources) > 1,
 		}
 
-		requests = append(requests, req)
+		requests = append(requests, sourceRequest{request: req, appPath: appPath})
 	}
 
 	return requests, nil
