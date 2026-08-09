@@ -322,34 +322,17 @@ func renderApplication(ctx context.Context, app *v1alpha1.Application, opts Temp
 			q.ApplicationSource.Helm.SkipTests = true
 		}
 
-		// For Kustomize sources, create a temporary overlay to avoid modifying the original
+		// Rendering a Kustomize source runs `kustomize edit`, which rewrites
+		// kustomization.yaml, so it is pointed at a generated overlay rather than at
+		// the checkout itself.
 		if appSourceType == v1alpha1.ApplicationSourceTypeKustomize {
-			tempDir, err := os.MkdirTemp(".", "kustomize-overlay-*")
+			overlayDir, err := kustomizeOverlay(appPath)
 			if err != nil {
-				return nil, fmt.Errorf("error creating temp directory for Kustomize overlay: %w", err)
+				return nil, err
 			}
-			defer os.RemoveAll(tempDir)
+			defer os.RemoveAll(overlayDir)
 
-			relPath, err := filepath.Rel(tempDir, appPath)
-			if err != nil {
-				os.RemoveAll(tempDir)
-				return nil, fmt.Errorf("error calculating relative path: %w", err)
-			}
-
-			// Create a kustomization.yaml that references the original path
-			kustomizationContent := fmt.Sprintf(`apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-- %s
-`, relPath)
-
-			kustomizationPath := filepath.Join(tempDir, "kustomization.yaml")
-			if err := os.WriteFile(kustomizationPath, []byte(kustomizationContent), 0644); err != nil {
-				os.RemoveAll(tempDir)
-				return nil, fmt.Errorf("error writing kustomization.yaml: %w", err)
-			}
-
-			appPath = tempDir
+			appPath = overlayDir
 		}
 
 		maxSize := resource.MustParse("10Mi")
@@ -437,6 +420,57 @@ resources:
 			SourcesProcessed: len(requests),
 		}},
 	}, nil
+}
+
+// kustomizeOverlay builds a throwaway kustomization that pulls in appPath as its
+// only resource, and returns its directory. The caller removes it.
+//
+// It goes in the system temp directory, not in the working directory: the working
+// directory is the repository being rendered, which is read-only in the container
+// image (WORKDIR /repo, USER nobody) and which nobody wants a stray
+// kustomize-overlay-* left in when a render is interrupted.
+//
+// The reference back into the checkout has to stay relative. Kustomize refuses an
+// absolute one outright — "new root ... cannot be absolute" — but follows a
+// relative path out of its own root happily enough.
+func kustomizeOverlay(appPath string) (string, error) {
+	absAppPath, err := filepath.Abs(appPath)
+	if err != nil {
+		return "", fmt.Errorf("error resolving Kustomize source %q: %w", appPath, err)
+	}
+
+	overlayDir, err := os.MkdirTemp("", "kustomize-overlay-*")
+	if err != nil {
+		return "", fmt.Errorf("error creating temp directory for Kustomize overlay: %w", err)
+	}
+
+	// MkdirTemp can hand back a path through a symlink — /tmp is one on macOS — and
+	// a relative path computed against the link does not survive kustomize resolving
+	// it, so resolve before measuring.
+	resolvedOverlayDir, err := filepath.EvalSymlinks(overlayDir)
+	if err != nil {
+		os.RemoveAll(overlayDir)
+		return "", fmt.Errorf("error resolving the Kustomize overlay directory: %w", err)
+	}
+
+	relPath, err := filepath.Rel(resolvedOverlayDir, absAppPath)
+	if err != nil {
+		os.RemoveAll(overlayDir)
+		return "", fmt.Errorf("error calculating relative path: %w", err)
+	}
+
+	kustomization := fmt.Sprintf(`apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- %s
+`, relPath)
+
+	if err := os.WriteFile(filepath.Join(overlayDir, "kustomization.yaml"), []byte(kustomization), 0o644); err != nil {
+		os.RemoveAll(overlayDir)
+		return "", fmt.Errorf("error writing kustomization.yaml: %w", err)
+	}
+
+	return overlayDir, nil
 }
 
 // sortObjects puts the rendered manifests in a stable order.
