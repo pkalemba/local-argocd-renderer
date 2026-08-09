@@ -7,8 +7,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/yaml"
 
@@ -106,25 +108,70 @@ func parseClusterSecrets(data []byte, namespace string) ([]corev1.Secret, error)
 		if err != nil {
 			return nil, err
 		}
-		if len(bytes.TrimSpace(doc)) == 0 {
-			continue
-		}
 
-		var secret corev1.Secret
-		if err := yaml.Unmarshal(doc, &secret); err != nil {
+		docSecrets, err := clusterSecretsFromDocument(doc, namespace)
+		if err != nil {
 			return nil, err
 		}
 
-		if secret.Kind != "" && secret.Kind != "Secret" {
-			return nil, fmt.Errorf("expected kind 'Secret', got '%s'", secret.Kind)
-		}
-		if secret.Labels[common.LabelKeySecretType] != common.LabelValueSecretTypeCluster {
-			return nil, fmt.Errorf("secret %q is missing the %s=%s label and would be ignored by the cluster generator",
-				secret.Name, common.LabelKeySecretType, common.LabelValueSecretTypeCluster)
+		secrets = append(secrets, docSecrets...)
+	}
+}
+
+// clusterSecretsFromDocument reads one YAML document, which holds either a single
+// Secret or a List of them. `kubectl get secret -o yaml` wraps its results in a
+// `kind: List` whenever it is asked for more than one — and asking for more than
+// one is exactly what the documented export does — so the wrapper has to be
+// unwrapped rather than rejected.
+func clusterSecretsFromDocument(doc []byte, namespace string) ([]corev1.Secret, error) {
+	// A document that is only comments, or an explicit `null`, parses fine and
+	// would otherwise be reported as a nameless secret missing its label.
+	var present any
+	if err := yaml.Unmarshal(doc, &present); err != nil {
+		return nil, err
+	}
+	if present == nil {
+		return nil, nil
+	}
+
+	var typeMeta metav1.TypeMeta
+	if err := yaml.Unmarshal(doc, &typeMeta); err != nil {
+		return nil, err
+	}
+
+	if strings.HasSuffix(typeMeta.Kind, "List") {
+		var list corev1.List
+		if err := yaml.Unmarshal(doc, &list); err != nil {
+			return nil, err
 		}
 
-		// The generator reads the clusters from the Argo CD namespace.
-		secret.Namespace = namespace
-		secrets = append(secrets, *mergeStringData(&secret))
+		var secrets []corev1.Secret
+		for _, item := range list.Items {
+			itemSecrets, err := clusterSecretsFromDocument(item.Raw, namespace)
+			if err != nil {
+				return nil, err
+			}
+			secrets = append(secrets, itemSecrets...)
+		}
+
+		return secrets, nil
 	}
+
+	var secret corev1.Secret
+	if err := yaml.Unmarshal(doc, &secret); err != nil {
+		return nil, err
+	}
+
+	if secret.Kind != "" && secret.Kind != "Secret" {
+		return nil, fmt.Errorf("expected kind 'Secret', got '%s'", secret.Kind)
+	}
+	if secret.Labels[common.LabelKeySecretType] != common.LabelValueSecretTypeCluster {
+		return nil, fmt.Errorf("secret %q is missing the %s=%s label and would be ignored by the cluster generator",
+			secret.Name, common.LabelKeySecretType, common.LabelValueSecretTypeCluster)
+	}
+
+	// The generator reads the clusters from the Argo CD namespace.
+	secret.Namespace = namespace
+
+	return []corev1.Secret{*mergeStringData(&secret)}, nil
 }
