@@ -155,7 +155,7 @@ cat examples/directory/app.yaml | ./local-argocd-renderer --app -
 | `--include-applications` | Also emit the Application resources themselves |
 | `--include-tests` | Keep the test hooks Helm charts ship, which are dropped by default |
 | `--output-dir` | Write `<dir>/<application>/<kind>-<name>.yaml` instead of printing to stdout |
-| `--quiet` | Suppress progress output on stderr |
+| `--quiet` | Suppress progress output on stderr, including the Argo CD libraries'. Warnings and errors still come through |
 | `--version` | Print the version and exit |
 | `--check-update` | Report whether a newer release exists, without installing it |
 | `--self-update` | Replace this binary with the latest release |

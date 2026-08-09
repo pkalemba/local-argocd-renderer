@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -92,5 +95,41 @@ func TestSaveManifestsToFilesDoesNotCollide(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(outputDir, "app", name)); err != nil {
 			t.Errorf("Expected %s to be written: %v", name, err)
 		}
+	}
+}
+
+// --quiet used to gate only this command's own "Saved:" lines, while the Argo CD
+// libraries kept logging their progress to the standard logrus logger — so the
+// noisier half of the output survived, and a plain render to stdout was never
+// quieted at all.
+func TestQuietSilencesLibraryProgress(t *testing.T) {
+	var stderr bytes.Buffer
+
+	level := logrus.GetLevel()
+	output := logrus.StandardLogger().Out
+	t.Cleanup(func() {
+		logrus.SetLevel(level)
+		logrus.SetOutput(output)
+	})
+	logrus.SetOutput(&stderr)
+
+	applyQuiet(false)
+	logrus.Info("generated 2 applications")
+	if !strings.Contains(stderr.String(), "generated 2 applications") {
+		t.Error("Expected progress to be logged without --quiet")
+	}
+
+	stderr.Reset()
+	applyQuiet(true)
+
+	logrus.Info("generated 2 applications")
+	if stderr.Len() != 0 {
+		t.Errorf("Expected --quiet to suppress progress, got %q", stderr.String())
+	}
+
+	// A problem is still a problem, quiet or not.
+	logrus.Warn("something looks wrong")
+	if !strings.Contains(stderr.String(), "something looks wrong") {
+		t.Errorf("Expected warnings to survive --quiet, got %q", stderr.String())
 	}
 }
