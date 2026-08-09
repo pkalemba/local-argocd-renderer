@@ -290,8 +290,9 @@ kubectl -n argocd get secret -l argocd.argoproj.io/secret-type=cluster -o yaml >
 local-argocd-renderer --app appset.yaml --clusters clusters.yaml
 ```
 
-Both `data` and `stringData` are accepted, so the secrets can also be written by
-hand — see `examples/appset-clusters/clusters.yaml`. The secret's labels behave as
+The `kind: List` that `kubectl` wraps a multi-secret export in is unwrapped, and both
+`data` and `stringData` are accepted, so the secrets can equally be written by hand as
+plain documents — see `examples/appset-clusters/clusters.yaml`. The secret's labels behave as
 they do in a cluster: `clusters.selector` matches on them, and they are exposed to
 the template as `{{ .metadata.labels.<key> }}` (or `{{metadata.labels.<key>}}`
 without `goTemplate`).
