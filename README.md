@@ -151,6 +151,7 @@ cat examples/directory/app.yaml | ./local-argocd-renderer --app -
 |------|-------------|
 | `--app` | Application or ApplicationSet manifest, `-` for stdin |
 | `--dir` | Directory to scan recursively instead of naming a single manifest |
+| `--repo-root` | Root of the checkout that `spec.source.path` is resolved against, defaulting to the working directory |
 | `--clusters` | File or directory with Argo CD cluster secrets for the cluster generator |
 | `--include-applications` | Also emit the Application resources themselves |
 | `--include-tests` | Keep the test hooks Helm charts ship, which are dropped by default |
@@ -224,7 +225,7 @@ import (
     "context"
     "log"
 
-    "github.com/lorenzbischof/local-argocd-renderer/pkg/renderer"
+    renderer "github.com/lorenzbischof/local-argocd-renderer"
 )
 
 ctx := context.Background()
@@ -242,8 +243,12 @@ if err != nil {
 // Process result.Objects
 ```
 
+The package lives at the module root and is named `renderer`, hence the named
+import above.
+
 `TemplateFromApplication` and `TemplateFromApplicationSet` are available when the
-kind is known up front, along with their `...YAML` variants. To only expand an
+kind is known up front, along with their `...YAML` variants, which take the manifest
+as a string. All of them take the same `TemplateOptions`. To only expand an
 ApplicationSet into Applications without rendering them, use
 `renderer.GenerateApplications`.
 

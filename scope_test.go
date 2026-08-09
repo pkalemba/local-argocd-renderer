@@ -13,11 +13,7 @@ import (
 func renderInto(t *testing.T, manifests map[string]string) map[string]string {
 	t.Helper()
 
-	root, err := os.MkdirTemp(".", "scope-*")
-	if err != nil {
-		t.Fatalf("Failed to create a fixture directory: %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll(root) })
+	root := t.TempDir()
 
 	input := filepath.Join(root, "input")
 	if err := os.MkdirAll(input, 0o755); err != nil {
@@ -38,7 +34,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/argoproj/argo-cd
-    path: ` + filepath.ToSlash(input) + `
+    path: input
   destination:
     server: https://kubernetes.default.svc
     namespace: dest-ns
@@ -48,7 +44,7 @@ spec:
 		t.Fatalf("Failed to write %s: %v", appPath, err)
 	}
 
-	result, err := Template(context.Background(), TemplateOptions{ApplicationFile: appPath, RepoRoot: "."})
+	result, err := Template(context.Background(), TemplateOptions{ApplicationFile: appPath, RepoRoot: root})
 	if err != nil {
 		t.Fatalf("Template failed: %v", err)
 	}

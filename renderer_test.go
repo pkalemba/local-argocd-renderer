@@ -67,7 +67,7 @@ spec:
 `
 
 	ctx := context.Background()
-	result, err := TemplateFromApplicationYAML(ctx, yamlContent, ".")
+	result, err := TemplateFromApplicationYAML(ctx, yamlContent, TemplateOptions{RepoRoot: "."})
 	if err != nil {
 		t.Fatalf("TemplateFromApplicationYAML failed: %v", err)
 	}

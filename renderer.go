@@ -29,6 +29,7 @@ import (
 	"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/argoproj/argo-cd/v3/reposerver/apiclient"
 	"github.com/argoproj/argo-cd/v3/reposerver/repository"
+	argopath "github.com/argoproj/argo-cd/v3/util/app/path"
 	"github.com/argoproj/argo-cd/v3/util/argo"
 	"github.com/argoproj/argo-cd/v3/util/git"
 )
@@ -232,24 +233,31 @@ func TemplateFromApplicationSet(ctx context.Context, opts TemplateOptions) (*Tem
 	return renderApplicationSet(ctx, appSet, opts)
 }
 
-// TemplateFromApplicationYAML processes an ArgoCD Application from YAML content
-func TemplateFromApplicationYAML(ctx context.Context, yamlContent string, repoRoot string) (*TemplateResult, error) {
+// TemplateFromApplicationYAML processes an ArgoCD Application from YAML content.
+//
+// It takes the same options as every other entry point. It used to take a bare
+// repoRoot and build the options itself, which silently discarded the rest of them
+// — a caller asking for Helm tests, or for a manifest size cap, got neither.
+func TemplateFromApplicationYAML(ctx context.Context, yamlContent string, opts TemplateOptions) (*TemplateResult, error) {
 	app, err := parseApplication([]byte(yamlContent))
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Application CRD: %w", err)
 	}
 
-	return renderApplication(ctx, app, TemplateOptions{RepoRoot: repoRoot})
+	return renderApplication(ctx, app, opts)
 }
 
-// TemplateFromApplicationSetYAML processes an ArgoCD ApplicationSet from YAML content
-func TemplateFromApplicationSetYAML(ctx context.Context, yamlContent string, repoRoot string) (*TemplateResult, error) {
+// TemplateFromApplicationSetYAML processes an ArgoCD ApplicationSet from YAML
+// content. As above, it takes the full options — dropping them here also meant an
+// ApplicationSet with a cluster generator never saw ClustersFile, so it rendered
+// against the in-cluster entry alone.
+func TemplateFromApplicationSetYAML(ctx context.Context, yamlContent string, opts TemplateOptions) (*TemplateResult, error) {
 	appSet, err := parseApplicationSet([]byte(yamlContent))
 	if err != nil {
 		return nil, fmt.Errorf("error parsing ApplicationSet CRD: %w", err)
 	}
 
-	return renderApplicationSet(ctx, appSet, TemplateOptions{RepoRoot: repoRoot})
+	return renderApplicationSet(ctx, appSet, opts)
 }
 
 // renderApplicationSet expands an ApplicationSet into Applications and renders each
@@ -289,7 +297,12 @@ func renderApplicationSet(ctx context.Context, appSet *v1alpha1.ApplicationSet, 
 
 // renderApplication renders every source of a single Application.
 func renderApplication(ctx context.Context, app *v1alpha1.Application, opts TemplateOptions) (*TemplateResult, error) {
-	requests, err := buildRequestsFromApplication(app)
+	repoRoot, err := absRepoRoot(opts.RepoRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	requests, err := buildRequestsFromApplication(app, repoRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -298,9 +311,8 @@ func renderApplication(ctx context.Context, app *v1alpha1.Application, opts Temp
 	var warnings []string
 
 	// Process each source
-	for sourceIndex, q := range requests {
-		appPath := q.ApplicationSource.Path
-		repoRoot := repoRootOrDefault(opts.RepoRoot)
+	for sourceIndex, source := range requests {
+		q, appPath := source.request, source.appPath
 
 		appSourceType, err := repository.GetAppSourceType(ctx, q.ApplicationSource, appPath, repoRoot, q.AppName, q.EnabledSourceTypes, []string{}, []string{})
 		if err != nil {
@@ -335,9 +347,9 @@ func renderApplication(ctx context.Context, app *v1alpha1.Application, opts Temp
 			appPath = overlayDir
 		}
 
-		maxSize := resource.MustParse("10Mi")
-		if opts.MaxManifestSize != "" {
-			maxSize = resource.MustParse(opts.MaxManifestSize)
+		maxSize, err := maxManifestSize(opts.MaxManifestSize)
+		if err != nil {
+			return nil, err
 		}
 
 		// Call the core GenerateManifests function directly
@@ -653,6 +665,27 @@ func parseApplicationSet(data []byte) (*v1alpha1.ApplicationSet, error) {
 	return &appSet, nil
 }
 
+// defaultMaxManifestSize is the repo-server's own default for the combined size of
+// a directory source's manifests — argocd-repo-server's
+// --max-combined-directory-manifests-size, which defaults to 10M.
+const defaultMaxManifestSize = "10M"
+
+// maxManifestSize parses the configured cap, or falls back to the repo-server's.
+// It used to go through resource.MustParse, so a caller's typo took the process
+// down with a panic from inside a Kubernetes helper rather than being reported.
+func maxManifestSize(configured string) (resource.Quantity, error) {
+	if configured == "" {
+		return resource.MustParse(defaultMaxManifestSize), nil
+	}
+
+	size, err := resource.ParseQuantity(configured)
+	if err != nil {
+		return resource.Quantity{}, fmt.Errorf("invalid MaxManifestSize %q: %w", configured, err)
+	}
+
+	return size, nil
+}
+
 func repoRootOrDefault(repoRoot string) string {
 	if repoRoot == "" {
 		return "."
@@ -660,13 +693,37 @@ func repoRootOrDefault(repoRoot string) string {
 	return repoRoot
 }
 
-func buildRequestsFromApplication(app *v1alpha1.Application) ([]*apiclient.ManifestRequest, error) {
+// absRepoRoot resolves the checkout root to an absolute path, which is what the
+// repo-server works in throughout. argopath.Path's containment check compares the
+// joined path against the root as a string prefix, and a relative root like "."
+// never matches one — so every path would be reported as outside the repo.
+func absRepoRoot(repoRoot string) (string, error) {
+	absolute, err := filepath.Abs(repoRootOrDefault(repoRoot))
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve RepoRoot %q: %w", repoRoot, err)
+	}
+
+	return absolute, nil
+}
+
+// sourceRequest pairs a manifest request with the directory the source was
+// resolved to on disk.
+type sourceRequest struct {
+	request *apiclient.ManifestRequest
+	// appPath is where the source's files actually live: spec.source.path resolved
+	// against the repo root, or the cache directory for a Helm chart pulled from a
+	// registry — which is outside the repo entirely and so is not resolved against
+	// it.
+	appPath string
+}
+
+func buildRequestsFromApplication(app *v1alpha1.Application, repoRoot string) ([]sourceRequest, error) {
 	sources := app.Spec.GetSources()
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("no sources found in application spec")
 	}
 
-	var requests []*apiclient.ManifestRequest
+	var requests []sourceRequest
 
 	for i, source := range sources {
 		if source.RepoURL == "" {
@@ -675,6 +732,7 @@ func buildRequestsFromApplication(app *v1alpha1.Application) ([]*apiclient.Manif
 
 		// Handle remote Helm charts by downloading them to a temporary directory
 		modifiedSource := sources[i]
+		var appPath string
 		if source.IsHelm() {
 			chartDir, err := downloadHelmChart(source.RepoURL, source.Chart, source.TargetRevision)
 			if err != nil {
@@ -685,6 +743,19 @@ func buildRequestsFromApplication(app *v1alpha1.Application) ([]*apiclient.Manif
 			modifiedSource = sources[i]
 			modifiedSource.Path = chartDir
 			modifiedSource.Chart = "" // Clear chart field since we're now using a local path
+			appPath = chartDir
+		} else {
+			// argopath.Path is what the repo-server resolves a source's path with:
+			// it joins the path onto the checkout root and refuses one that is
+			// absolute, escapes the root, or is not a directory. Using the path from
+			// the manifest as-is meant it was read relative to the process's working
+			// directory instead, so RepoRoot only ever worked by coincidence — when
+			// the caller happened to already be standing in the repo.
+			resolved, err := argopath.Path(repoRoot, source.Path)
+			if err != nil {
+				return nil, fmt.Errorf("source[%d]: %w", i, err)
+			}
+			appPath = resolved
 		}
 
 		req := &apiclient.ManifestRequest{
@@ -707,7 +778,7 @@ func buildRequestsFromApplication(app *v1alpha1.Application) ([]*apiclient.Manif
 			HasMultipleSources: len(sources) > 1,
 		}
 
-		requests = append(requests, req)
+		requests = append(requests, sourceRequest{request: req, appPath: appPath})
 	}
 
 	return requests, nil
