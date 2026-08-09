@@ -20,7 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 
 	"sigs.k8s.io/yaml"
@@ -375,7 +374,7 @@ func renderApplication(ctx context.Context, app *v1alpha1.Application, opts Temp
 	// Normalize and deduplicate target objects using the library function. The
 	// callback re-applies the tracking label whenever a namespace is filled in or
 	// cleared, exactly as the application controller does.
-	infoProvider := &resourceInfoProviderStub{}
+	infoProvider := newResourceScopeProvider(targetObjects)
 	resourceTracking := argo.NewResourceTracking()
 	dedupedObjects, conditions, err := controller.NormalizeTargetObjects(
 		app.Spec.Destination.Namespace,
@@ -775,12 +774,4 @@ func getCacheDir() (string, error) {
 	}
 
 	return filepath.Join(homeDir, ".cache"), nil
-}
-
-// resourceInfoProviderStub is a simple implementation of kubeutil.ResourceInfoProvider
-// that treats all resources as cluster-scoped (returns false for IsNamespaced)
-type resourceInfoProviderStub struct{}
-
-func (r *resourceInfoProviderStub) IsNamespaced(_ schema.GroupKind) (bool, error) {
-	return true, nil
 }
