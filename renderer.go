@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -20,7 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 
 	"sigs.k8s.io/yaml"
@@ -375,7 +375,7 @@ func renderApplication(ctx context.Context, app *v1alpha1.Application, opts Temp
 	// Normalize and deduplicate target objects using the library function. The
 	// callback re-applies the tracking label whenever a namespace is filled in or
 	// cleared, exactly as the application controller does.
-	infoProvider := &resourceInfoProviderStub{}
+	infoProvider := newResourceScopeProvider(targetObjects)
 	resourceTracking := argo.NewResourceTracking()
 	dedupedObjects, conditions, err := controller.NormalizeTargetObjects(
 		app.Spec.Destination.Namespace,
@@ -739,21 +739,15 @@ func downloadHelmChart(repoURL, chartName, version string) (string, error) {
 	}
 
 	// Download the chart
-	args := []string{"pull", fmt.Sprintf("%s/%s", repoURL, chartName)}
-	if version != "" {
-		args = append(args, "--version", version)
-	}
-	args = append(args, "--destination", helmCacheDir)
-	args = append(args, "--untar")
-
-	cmd := exec.Command("helm", args...)
+	cmd := exec.Command("helm", helmPullArgs(repoURL, chartName, version, helmCacheDir)...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("helm pull failed: %w\nOutput: %s", err, string(output))
 	}
 
-	// Find the extracted chart directory (helm pull creates a directory with the chart name)
-	extractedDir := filepath.Join(helmCacheDir, chartName)
+	// --untar extracts into a directory named after the chart, which for an OCI
+	// reference is the last segment of a path that may have several.
+	extractedDir := filepath.Join(helmCacheDir, path.Base(chartName))
 
 	// Rename to our reproducible name
 	if err := os.Rename(extractedDir, chartDir); err != nil {
@@ -761,6 +755,33 @@ func downloadHelmChart(repoURL, chartName, version string) (string, error) {
 	}
 
 	return chartDir, nil
+}
+
+// helmPullArgs builds the `helm pull` invocation for a chart, mirroring the two
+// forms Argo CD's own Helm client uses (util/helm/cmd.go).
+//
+// A classic HTTP repository is resolved through its index.yaml, which is what
+// --repo asks helm to do. Joining the repository URL and the chart name into a
+// single argument instead makes helm read it as a literal archive URL, so the
+// pull only ever succeeds for a chart that happens to be served at exactly that
+// path — which is not how chart repositories are laid out.
+//
+// An OCI registry has no index, so there the reference *is* the address, and
+// helm rejects --repo alongside it.
+func helmPullArgs(repoURL, chartName, version, destination string) []string {
+	args := []string{"pull"}
+
+	if registry, isOCI := strings.CutPrefix(repoURL, "oci://"); isOCI {
+		args = append(args, fmt.Sprintf("oci://%s/%s", strings.TrimSuffix(registry, "/"), chartName))
+	} else {
+		args = append(args, chartName, "--repo", repoURL)
+	}
+
+	if version != "" {
+		args = append(args, "--version", version)
+	}
+
+	return append(args, "--destination", destination, "--untar")
 }
 
 // getCacheDir returns the XDG cache directory
@@ -775,12 +796,4 @@ func getCacheDir() (string, error) {
 	}
 
 	return filepath.Join(homeDir, ".cache"), nil
-}
-
-// resourceInfoProviderStub is a simple implementation of kubeutil.ResourceInfoProvider
-// that treats all resources as cluster-scoped (returns false for IsNamespaced)
-type resourceInfoProviderStub struct{}
-
-func (r *resourceInfoProviderStub) IsNamespaced(_ schema.GroupKind) (bool, error) {
-	return true, nil
 }
