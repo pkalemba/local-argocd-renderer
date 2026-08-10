@@ -15,6 +15,15 @@ permissions:
   contents: write
   packages: write
 
+# Two pushes to main in quick succession would otherwise release in parallel, and
+# both runs would compute the next version from the same starting tag — so they
+# would race to create it, and the loser fails after having already built and
+# pushed artefacts. Queued rather than cancelled: a cancelled release can leave a
+# tag created with no assets attached to it.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest

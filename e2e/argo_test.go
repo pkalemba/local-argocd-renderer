@@ -37,12 +37,17 @@ func TestArgoCD(t *testing.T) {
 				"argo",
 				"https://argoproj.github.io/argo-helm",
 			))
+			require.NoError(t, err)
 
 			err = helmMgr.RunInstall(
 				helm.WithName("argo-cd"),
 				helm.WithNamespace(argocdNamespace),
 				helm.WithReleaseName("argo/argo-cd"),
-				helm.WithVersion("5.34.1"),
+				// Chart 10.3.0 ships Argo CD v3.5.0, the version whose libraries
+				// the renderer links. The pin was 5.34.1 — Argo CD 2.7 — so the
+				// test compared this renderer's output against a control plane
+				// three majors behind it.
+				helm.WithVersion("10.3.0"),
 			)
 			require.NoError(t, err)
 
