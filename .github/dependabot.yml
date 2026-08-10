@@ -1,0 +1,60 @@
+# Dependabot rather than Renovate: Renovate needs its GitHub App installed on the
+# repository, and until it is the config sits there doing nothing. This is native,
+# so it starts working the moment it lands on main.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    # semantic-release derives the next version from the commit messages, so these
+    # have to be conventional ones. The `fix` type makes a merged update cut a
+    # patch release; anything else would land silently.
+    commit-message:
+      prefix: fix
+    # Transitive dependencies are written out by `go mod tidy` but chosen by Argo
+    # CD. Bumping them one at a time produces churn and a graph Argo CD was never
+    # built against.
+    allow:
+      - dependency-type: direct
+    labels:
+      - dependencies
+      - needs-manual-pin-sync
+    groups:
+      # Argo CD does not export the replace directives it resolves its own graph
+      # with, so go.mod mirrors them: gitops-engine has to point at the module
+      # version built from the same commit as the argo-cd tag, and the k8s.io
+      # staging modules have to match what argo-cd pins. None of that can be
+      # derived automatically, so these move as one pull request that a human
+      # reconciles against the argo-cd release's own go.mod before merging —
+      # hence the needs-manual-pin-sync label above.
+      argo-cd-stack:
+        patterns:
+          - github.com/argoproj/argo-cd/v3
+          - github.com/argoproj/argo-cd/gitops-engine
+          - k8s.io/*
+          - sigs.k8s.io/*
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: fix
+    labels:
+      - dependencies
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # The Dockerfile's base images. The helm and kustomize versions pinned inside it
+  # are plain ARGs, which Dependabot cannot see — see the note in the README.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: fix
+    labels:
+      - dependencies

@@ -103,12 +103,16 @@ pushes it.
 > to public once, under the repository's Packages settings, before `docker run` works
 > without authenticating.
 
-Dependencies are kept up to date by Renovate (`renovate.json5`), which writes conventional
-commit messages so its merged updates cut patch releases. Argo CD, gitops-engine
-and the `k8s.io` modules land in a single `argo-cd stack` pull request, because go.mod
-mirrors pins that Argo CD does not export — those have to be reconciled against the
-release's own go.mod before merging. The `helm` and `kustomize` versions pinned in the
-Dockerfile and the CI workflow are tracked too.
+Dependencies are kept up to date by Dependabot (`.github/dependabot.yml`), which writes
+conventional commit messages so its merged updates cut patch releases. Argo CD,
+gitops-engine and the `k8s.io` modules land in a single `argo-cd-stack` pull request,
+labelled `needs-manual-pin-sync`, because go.mod mirrors pins that Argo CD does not export
+— those have to be reconciled against the release's own go.mod before merging. Indirect
+dependencies are left alone: they are written out by `go mod tidy` but chosen by Argo CD.
+
+> **Note**: the `helm` and `kustomize` versions pinned in the Dockerfile and the CI
+> workflow are **not** tracked. They are plain `ARG`/`env` values, and Dependabot has no
+> equivalent of Renovate's custom regex managers, so they have to be bumped by hand.
 
 To build from source:
 
