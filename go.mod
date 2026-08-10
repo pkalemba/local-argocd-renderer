@@ -1,4 +1,4 @@
-module github.com/lorenzbischof/local-argocd-renderer
+module github.com/pkalemba/local-argocd-renderer
 
 go 1.26.3
 

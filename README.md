@@ -225,7 +225,7 @@ import (
     "context"
     "log"
 
-    renderer "github.com/lorenzbischof/local-argocd-renderer"
+    renderer "github.com/pkalemba/local-argocd-renderer"
 )
 
 ctx := context.Background()

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	renderer "github.com/lorenzbischof/local-argocd-renderer"
+	renderer "github.com/pkalemba/local-argocd-renderer"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
