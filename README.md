@@ -28,12 +28,12 @@ The official Argo CD CLI requires a server connection (`argocd app manifests` fa
 ## Installation
 
 Pre-built binaries for Linux, macOS and Windows on amd64/arm64 are attached to
-every [release](../../releases), xz-compressed:
+every [release](../../releases), as `.tar.gz` archives:
 
 ```bash
-curl -fsSLO https://github.com/pkalemba/local-argocd-renderer/releases/latest/download/local-argocd-renderer_vX.Y.Z_linux_amd64.xz
-unxz local-argocd-renderer_vX.Y.Z_linux_amd64.xz
-chmod +x local-argocd-renderer_vX.Y.Z_linux_amd64
+curl -fsSLO https://github.com/pkalemba/local-argocd-renderer/releases/latest/download/local-argocd-renderer_vX.Y.Z_linux_amd64.tar.gz
+tar -xzf local-argocd-renderer_vX.Y.Z_linux_amd64.tar.gz
+chmod +x local-argocd-renderer
 ```
 
 A multi-platform container image is published to `ghcr.io/pkalemba/local-argocd-renderer`,
@@ -72,7 +72,7 @@ Around 75 MB uncompressed. It links Argo CD's rendering libraries, which pull in
 package the renderer is built on — accounts for 67 MB of that. Everything else in this
 repository adds roughly 7 MB, so there is no meaningful trimming to do short of
 reimplementing what Argo CD already does. The release assets are compressed instead,
-which takes them to about 15 MB.
+which takes them to about 25 MB.
 
 ### Releasing
 
@@ -118,7 +118,7 @@ To build from source:
 
 ```bash
 make build          # binary for the current platform
-make dist           # cross-compiled binaries for every platform in dist/
+make dist           # cross-compiled .tar.gz per platform in dist/
 make image          # multi-platform container image via docker buildx
 make test           # unit and golden tests
 ```
