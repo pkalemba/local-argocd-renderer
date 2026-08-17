@@ -6,7 +6,7 @@ require (
 	github.com/argoproj/argo-cd/v3 v3.5.0
 	github.com/creativeprojects/go-selfupdate v1.6.0
 	github.com/sergi/go-diff v1.4.0
-	github.com/sirupsen/logrus v1.9.4
+	github.com/sirupsen/logrus v1.10.0
 	github.com/stretchr/testify v1.11.1
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
