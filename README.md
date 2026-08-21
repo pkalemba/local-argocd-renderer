@@ -27,24 +27,89 @@ The official Argo CD CLI requires a server connection (`argocd app manifests` fa
 
 ## Installation
 
-Pre-built binaries for Linux, macOS and Windows on amd64/arm64 are attached to
-every [release](../../releases), as `.tar.gz` archives:
+### Prerequisites
 
-```bash
-curl -fsSLO https://github.com/pkalemba/local-argocd-renderer/releases/latest/download/local-argocd-renderer_vX.Y.Z_linux_amd64.tar.gz
-tar -xzf local-argocd-renderer_vX.Y.Z_linux_amd64.tar.gz
-chmod +x local-argocd-renderer
+The renderer drives `helm` and `kustomize` as external commands, exactly as Argo CD's
+repo-server does, so what has to be installed depends on the sources being rendered:
+
+| Application source | Needs |
+|--------------------|-------|
+| Plain manifest directory | nothing beyond the renderer |
+| Helm chart | `helm` on `PATH` |
+| Kustomize overlay | `kustomize` on `PATH` |
+
+A chart pulled from a Helm repository rather than read out of the checkout also needs
+network access, since that is a `helm pull`. Nothing else reaches the network: there is
+no Argo CD server or cluster to talk to.
+
+A missing tool is not detected up front — it surfaces when a source of that kind is
+first rendered:
+
+```
+Error: error generating manifests for source 1: failed to execute helm template command:
+failed running helm: exec: "helm": executable file not found in $PATH
 ```
 
-A multi-platform container image is published to `ghcr.io/pkalemba/local-argocd-renderer`,
-bundling the `helm` and `kustomize` the renderer shells out to:
+The container image below bundles both. For a local install, any reasonably recent
+version works; CI and the image pin helm v3.16.4 and kustomize v5.5.0, and the
+`devenv.nix` shell in this repository provides both.
+
+### Binary
+
+Pre-built binaries for Linux, macOS and Windows on amd64/arm64 are attached to every
+[release](../../releases) as `.tar.gz` archives, alongside a `checksums.txt`. This
+resolves the latest version, verifies the download and installs it:
+
+```bash
+VERSION=$(curl -fsSL https://api.github.com/repos/pkalemba/local-argocd-renderer/releases/latest \
+  | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+BASE="https://github.com/pkalemba/local-argocd-renderer/releases/download/${VERSION}"
+
+curl -fsSLO "${BASE}/local-argocd-renderer_${VERSION}_${OS}_${ARCH}.tar.gz"
+curl -fsSLO "${BASE}/checksums.txt"
+grep " local-argocd-renderer_${VERSION}_${OS}_${ARCH}.tar.gz$" checksums.txt \
+  | sha256sum -c -                            # macOS: shasum -a 256 -c -
+
+tar -xzf "local-argocd-renderer_${VERSION}_${OS}_${ARCH}.tar.gz"
+sudo install -m 0755 local-argocd-renderer /usr/local/bin/
+local-argocd-renderer --version
+```
+
+The archive holds the single binary with its executable bit already set, so unpacking it
+anywhere on `PATH` is enough; `/usr/local/bin` is only a convention. The Windows archives
+are named the same way and hold `local-argocd-renderer.exe`.
+
+### Container image
+
+A multi-platform image is published to `ghcr.io/pkalemba/local-argocd-renderer`, with
+`helm` and `kustomize` already in it:
 
 ```bash
 docker run --rm -v "$PWD:/repo" ghcr.io/pkalemba/local-argocd-renderer \
   --app examples/directory/app.yaml
 ```
 
-Both are produced by the release workflow — see [Releasing](#releasing).
+The working directory in the image is `/repo`, so the repository is mounted there and
+every path on the command line is relative to it, the same as running the binary from the
+root of the checkout. Tags are `:vX.Y.Z` and `:latest`. The image runs as `nobody`, so
+`--output-dir` writing into a bind mount needs a directory that user can write to —
+`--user "$(id -u):$(id -g)"` is the usual way to keep the rendered files owned by you.
+
+### From source
+
+```bash
+go build ./cmd/local-argocd-renderer     # or: make build
+```
+
+Go 1.26.3 or newer, per `go.mod`. `go install github.com/pkalemba/local-argocd-renderer/cmd/local-argocd-renderer@latest`
+does **not** work: `go.mod` carries the `replace` directives Argo CD needs but does not
+export, and those are ignored when a module is installed by version rather than built from
+a checkout. Clone and build, or take a release binary.
+
+The binary and the image are both produced by the release workflow — see
+[Releasing](#releasing).
 
 ### Updating
 
@@ -125,30 +190,64 @@ make test           # unit and golden tests
 
 ## Usage
 
+Point the renderer at an Application manifest from the root of the checkout it refers to,
+and the rendered objects go to stdout as a YAML stream:
+
+```bash
+git clone https://github.com/pkalemba/local-argocd-renderer && cd local-argocd-renderer
+local-argocd-renderer --app examples/directory/app.yaml
+```
+
+```yaml
+# Generated 2 manifests
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/instance: directory-app
+  name: guestbook-ui
+  namespace: default
+...
+```
+
+Only the manifests go to stdout, so the output pipes into `kubectl apply -f -`, `kubeconform`
+or a file as it is. Progress from the Argo CD libraries goes to stderr, and `--quiet`
+silences it.
+
+`spec.source.repoURL` and `spec.source.revision` are ignored — `spec.source.path` is
+resolved against the local checkout (`--repo-root`, defaulting to the working directory),
+so what gets rendered is the state of the files on disk, including uncommitted changes.
+That is the whole point of the tool: no server, no cluster, no fetch.
+
 ### CLI
 
 ```bash
-# Build the CLI
-go build ./cmd/local-argocd-renderer
-
-# Run the CLI
-./local-argocd-renderer --app examples/directory/app.yaml
-
 # ApplicationSets work the same way
-./local-argocd-renderer --app examples/appset-list/appset.yaml
+local-argocd-renderer --app examples/appset-list/appset.yaml
 
 # Render every Application and ApplicationSet in a tree
-./local-argocd-renderer --dir examples/
+local-argocd-renderer --dir examples/
+
+# Render an app living in another checkout
+local-argocd-renderer --app ../infra/apps/web.yaml --repo-root ../infra
 
 # Feed the cluster generator with local cluster secrets
-./local-argocd-renderer --app examples/appset-clusters/appset.yaml \
+local-argocd-renderer --app examples/appset-clusters/appset.yaml \
   --clusters examples/appset-clusters/clusters.yaml
 
 # Split the output into one file per object, grouped per Application
-./local-argocd-renderer --app examples/appset-list/appset.yaml --output-dir rendered
+local-argocd-renderer --app examples/appset-list/appset.yaml --output-dir rendered
 
 # Or pipe from stdin
-cat examples/directory/app.yaml | ./local-argocd-renderer --app -
+cat examples/directory/app.yaml | local-argocd-renderer --app -
+
+# See what an uncommitted change does to the rendered output
+local-argocd-renderer --dir apps/ --quiet > after.yaml
+git stash                                   # put the checkout back to HEAD
+local-argocd-renderer --dir apps/ --quiet > before.yaml
+git stash pop
+diff -u before.yaml after.yaml
 ```
 
 | Flag | Description |
