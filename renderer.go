@@ -62,6 +62,13 @@ type TemplateOptions struct {
 	// every Application; with this set the per-source field decides on its own,
 	// the way Argo CD reads it.
 	IncludeHelmTests bool
+	// HelmCapabilitiesFile points at a YAML file describing the destination
+	// cluster — its Kubernetes version and the API versions installed on it —
+	// so that the `.Capabilities` guards a chart writes decide here the way they
+	// would against that cluster. See HelmCapabilities for the format. Without
+	// it Helm renders against its own built-in defaults, as if none of the CRDs
+	// a chart looks for existed.
+	HelmCapabilitiesFile string
 }
 
 // TemplateResult contains the results of the templating process
@@ -302,7 +309,12 @@ func renderApplication(ctx context.Context, app *v1alpha1.Application, opts Temp
 		return nil, err
 	}
 
-	requests, err := buildRequestsFromApplication(app, repoRoot)
+	caps, err := LoadHelmCapabilities(opts.HelmCapabilitiesFile)
+	if err != nil {
+		return nil, err
+	}
+
+	requests, err := buildRequestsFromApplication(app, repoRoot, caps)
 	if err != nil {
 		return nil, err
 	}
@@ -717,7 +729,7 @@ type sourceRequest struct {
 	appPath string
 }
 
-func buildRequestsFromApplication(app *v1alpha1.Application, repoRoot string) ([]sourceRequest, error) {
+func buildRequestsFromApplication(app *v1alpha1.Application, repoRoot string, caps *HelmCapabilities) ([]sourceRequest, error) {
 	sources := app.Spec.GetSources()
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("no sources found in application spec")
@@ -777,6 +789,10 @@ func buildRequestsFromApplication(app *v1alpha1.Application, repoRoot string) ([
 			ProjectName:        app.Spec.Project,
 			HasMultipleSources: len(sources) > 1,
 		}
+
+		// The repo-server reads these off the destination cluster; there is no
+		// cluster here, so they come from the file instead.
+		caps.applyTo(req)
 
 		requests = append(requests, sourceRequest{request: req, appPath: appPath})
 	}

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-capabilities
+data:
+  kubeVersion: {{ .Capabilities.KubeVersion.Version | quote }}
+  major: {{ .Capabilities.KubeVersion.Major | quote }}
+  minor: {{ .Capabilities.KubeVersion.Minor | quote }}
+  hasPrometheusOperator: {{ .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" | quote }}

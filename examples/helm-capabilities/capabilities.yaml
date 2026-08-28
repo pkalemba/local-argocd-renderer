@@ -1,0 +1,13 @@
+# The destination cluster as `helm template` should see it, which is what the
+# `.Capabilities` checks in a chart are asked about. Pass it with
+# `--capabilities`.
+#
+# kubeVersion is what `kubectl version` reports for the cluster; apiVersions is
+# what `kubectl api-resources` lists. Helm knows the API versions of a bare
+# cluster already, so only the ones it cannot guess — the CRDs — need listing.
+# Charts check for either a group/version or a group/version/Kind, so a CRD that
+# might be checked for either way is worth listing both ways.
+kubeVersion: v1.31.4
+apiVersions:
+  - monitoring.coreos.com/v1
+  - monitoring.coreos.com/v1/ServiceMonitor

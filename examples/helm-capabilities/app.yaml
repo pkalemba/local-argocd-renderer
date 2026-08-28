@@ -1,0 +1,12 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: capabilities-example-app
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/myorg/myrepo
+    path: examples/helm-capabilities/input
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: capabilities-namespace
