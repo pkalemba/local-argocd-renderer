@@ -22,6 +22,7 @@ The official Argo CD CLI requires a server connection (`argocd app manifests` fa
   - Kustomize applications with overlays and patches
   - Plain YAML/JSON manifest directories
 - **🧬 ApplicationSets**: Expand an ApplicationSet with the upstream generators and render every Application it produces
+- **🧭 Cluster capabilities**: Feed `helm template` the destination cluster's Kubernetes version and API versions from a YAML file, so the `.Capabilities` checks in a chart decide the way they would against that cluster
 - **🔧 CLI Tool**: Simple command-line interface matching Argo CD patterns
 - **📚 Library API**: Go package for integration into other tools
 
@@ -236,6 +237,10 @@ local-argocd-renderer --app ../infra/apps/web.yaml --repo-root ../infra
 local-argocd-renderer --app examples/appset-clusters/appset.yaml \
   --clusters examples/appset-clusters/clusters.yaml
 
+# Tell the charts what the destination cluster supports
+local-argocd-renderer --app examples/helm-capabilities/app.yaml \
+  --capabilities examples/helm-capabilities/capabilities.yaml
+
 # Split the output into one file per object, grouped per Application
 local-argocd-renderer --app examples/appset-list/appset.yaml --output-dir rendered
 
@@ -304,6 +309,81 @@ Non-Helm sources are unaffected either way — the tests are only skipped once a
 been identified as Helm, because in Argo CD's model a non-empty `helm:` block is itself
 what marks a source as a chart.
 
+### Cluster capabilities
+
+Charts branch on what the destination cluster supports:
+
+```yaml
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+{{- end }}
+```
+
+Argo CD answers those checks from the cluster the Application is destined for. There is
+no cluster here, so `helm template` falls back to its own defaults: the Kubernetes
+version the helm binary was built against, and the API versions of a bare cluster. Every
+`ServiceMonitor`, `Certificate` and `IngressRoute` a chart guards that way then silently
+disappears from the output — which is exactly the part of a diff worth looking at.
+
+`--capabilities` points at a YAML file describing the cluster instead:
+
+```yaml
+# capabilities.yaml
+kubeVersion: v1.31.4
+apiVersions:
+  - monitoring.coreos.com/v1
+  - monitoring.coreos.com/v1/ServiceMonitor
+```
+
+```bash
+./local-argocd-renderer --dir apps/ --capabilities capabilities.yaml
+```
+
+- `kubeVersion` is the cluster's Kubernetes version, and becomes `helm template
+  --kube-version`. It fills in `.Capabilities.KubeVersion`, from which Helm derives
+  `.Major` and `.Minor`.
+- `apiVersions` becomes one `--api-versions` per entry, and fills in
+  `.Capabilities.APIVersions`. Helm appends them to the set it knows a cluster always
+  has, so only what it cannot guess — the CRDs — has to be listed. A chart may check for
+  a `group/version` or for a `group/version/Kind`, and the two are matched literally, so
+  a CRD that might be checked for either way is worth listing both ways.
+
+Both keys are optional; the one that is left out keeps Helm's default.
+
+Against a cluster you can reach, the two lists are what `kubectl` reports:
+
+```bash
+{
+  echo "kubeVersion: $(kubectl version -o json | jq -r .serverVersion.gitVersion)"
+  echo "apiVersions:"
+  {
+    kubectl api-versions
+    kubectl api-resources --no-headers --verbs=list | awk 'NF { print $(NF-2) "/" $NF }'
+  } | sort -u | sed 's/^/  - /'
+} > capabilities.yaml
+```
+
+The file describes the cluster, so an Application that pins a version itself keeps
+deciding for itself — the same precedence Argo CD applies to what it reads off the
+destination cluster:
+
+```yaml
+spec:
+  source:
+    helm:
+      kubeVersion: v1.24.0
+      apiVersions:
+        - monitoring.coreos.com/v1
+```
+
+`spec.source.kustomize.kubeVersion` and `spec.source.kustomize.apiVersions` work the same
+way, and the file applies to a chart rendered through `kustomize build --enable-helm`
+just as it does to a plain Helm source.
+
+A single file covers the whole render. An ApplicationSet that fans out over clusters of
+different versions needs one run per cluster, with the matching file.
+
 ### Emitting the Applications themselves
 
 `--include-applications` puts the Application resource ahead of the manifests it renders
@@ -348,6 +428,10 @@ if err != nil {
 
 The package lives at the module root and is named `renderer`, hence the named
 import above.
+
+`TemplateOptions.HelmCapabilitiesFile` is the library's spelling of `--capabilities`;
+`renderer.LoadHelmCapabilities` reads such a file on its own, and
+`renderer.HelmCapabilities` documents the format.
 
 `TemplateFromApplication` and `TemplateFromApplicationSet` are available when the
 kind is known up front, along with their `...YAML` variants, which take the manifest

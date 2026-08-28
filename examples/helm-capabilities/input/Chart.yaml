@@ -1,0 +1,6 @@
+apiVersion: v2
+name: capabilities-example
+description: A chart whose output depends on what the destination cluster supports
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

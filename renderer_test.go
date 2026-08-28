@@ -78,10 +78,11 @@ spec:
 }
 
 type goldenTestCase struct {
-	name         string
-	appPath      string
-	expectedPath string
-	clustersPath string
+	name             string
+	appPath          string
+	expectedPath     string
+	clustersPath     string
+	capabilitiesPath string
 }
 
 func TestGoldenExamples(t *testing.T) {
@@ -128,6 +129,12 @@ func TestGoldenExamples(t *testing.T) {
 			expectedPath: "examples/appset-clusters-helm/expected.yaml",
 			clustersPath: "examples/appset-clusters-helm/clusters.yaml",
 		},
+		{
+			name:             "helm-capabilities",
+			appPath:          "examples/helm-capabilities/app.yaml",
+			expectedPath:     "examples/helm-capabilities/expected.yaml",
+			capabilitiesPath: "examples/helm-capabilities/capabilities.yaml",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -135,9 +142,10 @@ func TestGoldenExamples(t *testing.T) {
 			// Call the library function directly
 			ctx := context.Background()
 			opts := TemplateOptions{
-				ApplicationFile: tc.appPath,
-				RepoRoot:        ".",
-				ClustersFile:    tc.clustersPath,
+				ApplicationFile:      tc.appPath,
+				RepoRoot:             ".",
+				ClustersFile:         tc.clustersPath,
+				HelmCapabilitiesFile: tc.capabilitiesPath,
 			}
 
 			result, err := Template(ctx, opts)

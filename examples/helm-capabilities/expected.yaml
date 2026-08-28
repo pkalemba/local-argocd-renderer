@@ -1,0 +1,41 @@
+# Generated 3 manifests
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/instance: capabilities-example-app
+  name: capabilities-example-app-metrics
+  namespace: capabilities-namespace
+spec:
+  endpoints:
+  - port: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: capabilities-example
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    app.kubernetes.io/instance: capabilities-example-app
+  name: capabilities-example-app-pdb
+  namespace: capabilities-namespace
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: capabilities-example
+---
+apiVersion: v1
+data:
+  hasPrometheusOperator: "true"
+  kubeVersion: v1.31.4
+  major: "1"
+  minor: "31"
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: capabilities-example-app
+  name: capabilities-example-app-capabilities
+  namespace: capabilities-namespace
