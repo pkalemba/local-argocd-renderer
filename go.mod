@@ -3,7 +3,7 @@ module github.com/pkalemba/local-argocd-renderer
 go 1.26.3
 
 require (
-	github.com/argoproj/argo-cd/v3 v3.5.0
+	github.com/argoproj/argo-cd/v3 v3.5.2
 	github.com/creativeprojects/go-selfupdate v1.6.0
 	github.com/sergi/go-diff v1.4.0
 	github.com/sirupsen/logrus v1.10.0
