@@ -32,6 +32,7 @@ import (
 	argopath "github.com/argoproj/argo-cd/v3/util/app/path"
 	"github.com/argoproj/argo-cd/v3/util/argo"
 	"github.com/argoproj/argo-cd/v3/util/git"
+	utilio "github.com/argoproj/argo-cd/v3/util/io"
 )
 
 const (
@@ -374,7 +375,7 @@ func renderApplication(ctx context.Context, app *v1alpha1.Application, opts Temp
 			true,                  // isLocal=true - crucial for local operation!
 			&git.NoopCredsStore{}, // no git credentials needed
 			maxSize,               // max combined manifest size
-			nil,                   // no temp paths needed for local operation
+			source.refPaths,       // where each $ref source was checked out to
 		)
 
 		if err != nil {
@@ -727,6 +728,9 @@ type sourceRequest struct {
 	// registry — which is outside the repo entirely and so is not resolved against
 	// it.
 	appPath string
+	// refPaths tells the repo-server where each source referenced through $ref was
+	// checked out to. It is empty for an Application that declares no ref source.
+	refPaths utilio.TempPaths
 }
 
 func buildRequestsFromApplication(app *v1alpha1.Application, repoRoot string, caps *HelmCapabilities) ([]sourceRequest, error) {
@@ -735,11 +739,30 @@ func buildRequestsFromApplication(app *v1alpha1.Application, repoRoot string, ca
 		return nil, fmt.Errorf("no sources found in application spec")
 	}
 
+	// A source may take its value files out of a sibling source rather than from
+	// next to the chart, by naming that source's ref as $name. Which source each
+	// $name stands for has to be worked out before any of them is rendered.
+	refSources, err := refTargets(sources)
+	if err != nil {
+		return nil, err
+	}
+	refPaths := newRefPaths(refSources, repoRoot)
+
 	var requests []sourceRequest
 
 	for i, source := range sources {
 		if source.RepoURL == "" {
 			return nil, fmt.Errorf("source[%d].repoURL is required", i)
+		}
+
+		// A ref-only source carries nothing to render; it is here so that another
+		// source can read files out of it.
+		if isRefOnlySource(&sources[i], len(sources) > 1) {
+			continue
+		}
+
+		if err := validateRefs(&sources[i], refSources, len(sources) > 1); err != nil {
+			return nil, fmt.Errorf("source[%d]: %w", i, err)
 		}
 
 		// Handle remote Helm charts by downloading them to a temporary directory
@@ -788,13 +811,18 @@ func buildRequestsFromApplication(app *v1alpha1.Application, repoRoot string, ca
 			InstallationID:     installationID,
 			ProjectName:        app.Spec.Project,
 			HasMultipleSources: len(sources) > 1,
+			RefSources:         refSources,
 		}
 
 		// The repo-server reads these off the destination cluster; there is no
 		// cluster here, so they come from the file instead.
 		caps.applyTo(req)
 
-		requests = append(requests, sourceRequest{request: req, appPath: appPath})
+		requests = append(requests, sourceRequest{request: req, appPath: appPath, refPaths: refPaths})
+	}
+
+	if len(requests) == 0 {
+		return nil, fmt.Errorf("no renderable sources found in application spec: every source is a 'ref' source")
 	}
 
 	return requests, nil

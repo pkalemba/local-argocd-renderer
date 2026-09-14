@@ -22,6 +22,7 @@ The official Argo CD CLI requires a server connection (`argocd app manifests` fa
   - Kustomize applications with overlays and patches
   - Plain YAML/JSON manifest directories
 - **🧬 ApplicationSets**: Expand an ApplicationSet with the upstream generators and render every Application it produces
+- **🔗 Multi-source `$ref`**: Render a chart against value files that live in another of the Application's sources
 - **🧭 Cluster capabilities**: Feed `helm template` the destination cluster's Kubernetes version and API versions from a YAML file, so the `.Capabilities` checks in a chart decide the way they would against that cluster
 - **🔧 CLI Tool**: Simple command-line interface matching Argo CD patterns
 - **📚 Library API**: Go package for integration into other tools
@@ -401,6 +402,45 @@ rendered/list-two/application-list-two.yaml
 rendered/list-two/configmap-two.yaml
 ```
 
+### Multiple sources and `$ref` values
+
+An Application with several sources can keep a chart in one source and the values it
+is rendered with in another. The source holding the values declares a `ref`, and the
+chart names it with a `$` prefix in `valueFiles`:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: multi-source-ref-app
+spec:
+  project: default
+  sources:
+  # Renders nothing itself; it is here so the chart below can read files out of it.
+  - repoURL: https://github.com/myorg/myrepo
+    targetRevision: HEAD
+    ref: values
+  - repoURL: https://github.com/myorg/myrepo
+    path: examples/multi-source-ref/input/chart
+    targetRevision: HEAD
+    helm:
+      valueFiles:
+      - $values/examples/multi-source-ref/input/values/production.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: multi-source-ref-namespace
+```
+
+The path after `$values` is read from the root of the referenced source, exactly as
+Argo CD reads it. A source that declares a `ref` and nothing else renders no manifests
+of its own, and a `$name` no source declares is an error rather than a path quietly
+resolved against the checkout root.
+
+Argo CD clones each referenced repository; this renders from the one checkout it has,
+so a ref source resolves to `--repo-root` whichever `repoURL` it names. Pointing a
+source at values that live in a genuinely different repository needs that repository
+checked out and rendered on its own.
+
 ## Library
 
 ```go
@@ -535,7 +575,7 @@ The `examples/` directory contains sample applications and ApplicationSets.
 
 ## Limitations
 
-- **Local repositories only**: Remote Git repositories must be cloned first
+- **Local repositories only**: Remote Git repositories must be cloned first, including the ones a multi-source `$ref` names
 - **No server-side plugins**: Custom Argo CD plugins are not currently supported
 - **Remote ApplicationSet generators**: `scmProvider`, `pullRequest`, `clusterDecisionResource` and `plugin` query a remote service and are not supported
 - **Simplified validation**: Some advanced Argo CD validation rules are not applied

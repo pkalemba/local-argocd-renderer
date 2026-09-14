@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+data:
+  message: {{ .Values.config.message | quote }}
+  environment: {{ .Values.config.environment | quote }}
+  replicas: {{ .Values.replicaCount | quote }}
+  image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

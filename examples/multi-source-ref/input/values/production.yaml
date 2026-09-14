@@ -1,0 +1,9 @@
+# Lives in the source the Application declares as `ref: values`, not next to the chart.
+replicaCount: 3
+
+image:
+  tag: "1.27"
+
+config:
+  message: "values came from the ref source"
+  environment: "production"

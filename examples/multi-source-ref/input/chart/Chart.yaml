@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ref-example
+description: A chart whose values come from another source of the same Application
+type: application
+version: 0.1.0
+appVersion: "1.0"

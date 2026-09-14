@@ -130,6 +130,11 @@ func TestGoldenExamples(t *testing.T) {
 			clustersPath: "examples/appset-clusters-helm/clusters.yaml",
 		},
 		{
+			name:         "multi-source-ref",
+			appPath:      "examples/multi-source-ref/app.yaml",
+			expectedPath: "examples/multi-source-ref/expected.yaml",
+		},
+		{
 			name:             "helm-capabilities",
 			appPath:          "examples/helm-capabilities/app.yaml",
 			expectedPath:     "examples/helm-capabilities/expected.yaml",
