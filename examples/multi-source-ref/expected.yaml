@@ -1,0 +1,14 @@
+# Generated 1 manifests
+---
+apiVersion: v1
+data:
+  environment: production
+  image: nginx:1.27
+  message: values came from the ref source
+  replicas: "3"
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: multi-source-ref-app
+  name: multi-source-ref-app-config
+  namespace: multi-source-ref-namespace

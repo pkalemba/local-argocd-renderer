@@ -1,0 +1,10 @@
+# Defaults, meant to be overridden by the values source the Application refers to.
+replicaCount: 1
+
+image:
+  repository: nginx
+  tag: "latest"
+
+config:
+  message: "chart default"
+  environment: "unset"

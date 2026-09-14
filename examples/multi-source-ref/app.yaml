@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: multi-source-ref-app
+spec:
+  project: default
+  sources:
+  # A source that renders nothing itself: it exists only so the chart below can
+  # read value files out of it through $values.
+  - repoURL: https://github.com/myorg/myrepo
+    targetRevision: HEAD
+    ref: values
+  - repoURL: https://github.com/myorg/myrepo
+    path: examples/multi-source-ref/input/chart
+    targetRevision: HEAD
+    helm:
+      valueFiles:
+      - $values/examples/multi-source-ref/input/values/production.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: multi-source-ref-namespace
