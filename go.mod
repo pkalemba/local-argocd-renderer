@@ -3,7 +3,7 @@ module github.com/pkalemba/local-argocd-renderer
 go 1.26.3
 
 require (
-	github.com/argoproj/argo-cd/v3 v3.5.2
+	github.com/argoproj/argo-cd/v3 v3.5.3
 	github.com/creativeprojects/go-selfupdate v1.6.0
 	github.com/gosimple/slug v1.15.0
 	github.com/sergi/go-diff v1.4.0
@@ -11,7 +11,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	k8s.io/api v0.37.0
 	k8s.io/apimachinery v0.37.0
-	sigs.k8s.io/controller-runtime v0.25.0
+	sigs.k8s.io/controller-runtime v0.25.1
 	sigs.k8s.io/e2e-framework v0.7.0
 	sigs.k8s.io/yaml v1.6.0
 )
