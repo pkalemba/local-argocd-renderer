@@ -21,7 +21,7 @@ The official Argo CD CLI requires a server connection (`argocd app manifests` fa
   - Helm charts with values, parameters, and custom options
   - Kustomize applications with overlays and patches
   - Plain YAML/JSON manifest directories
-- **🧬 ApplicationSets**: Expand an ApplicationSet with the upstream generators and render every Application it produces
+- **🧬 ApplicationSets**: Expand an ApplicationSet with the upstream generators and render every Application it produces, with cluster secrets and open pull requests mocked from local YAML
 - **🔗 Multi-source `$ref`**: Render a chart against value files that live in another of the Application's sources
 - **🧭 Cluster capabilities**: Feed `helm template` the destination cluster's Kubernetes version and API versions from a YAML file, so the `.Capabilities` checks in a chart decide the way they would against that cluster
 - **🔧 CLI Tool**: Simple command-line interface matching Argo CD patterns
@@ -238,6 +238,10 @@ local-argocd-renderer --app ../infra/apps/web.yaml --repo-root ../infra
 local-argocd-renderer --app examples/appset-clusters/appset.yaml \
   --clusters examples/appset-clusters/clusters.yaml
 
+# Feed the pullRequest generator with mocked open pull requests
+local-argocd-renderer --app examples/appset-pull-request/appset.yaml \
+  --pull-requests examples/appset-pull-request/pull-requests.yaml
+
 # Tell the charts what the destination cluster supports
 local-argocd-renderer --app examples/helm-capabilities/app.yaml \
   --capabilities examples/helm-capabilities/capabilities.yaml
@@ -262,6 +266,7 @@ diff -u before.yaml after.yaml
 | `--dir` | Directory to scan recursively instead of naming a single manifest |
 | `--repo-root` | Root of the checkout that `spec.source.path` is resolved against, defaulting to the working directory |
 | `--clusters` | File or directory with Argo CD cluster secrets for the cluster generator |
+| `--pull-requests` | File or directory listing the open pull requests for the pullRequest generator |
 | `--include-applications` | Also emit the Application resources themselves |
 | `--include-tests` | Keep the test hooks Helm charts ship, which are dropped by default |
 | `--output-dir` | Write `<dir>/<application>/<kind>-<name>.yaml` instead of printing to stdout |
@@ -504,8 +509,9 @@ replaced with local equivalents:
 | `list` | ✅ |
 | `git` (`directories` and `files`) | ✅ reads the local checkout |
 | `clusters` | ✅ reads the cluster secrets given via `--clusters` |
+| `pullRequest` | ✅ reads the pull requests listed in `--pull-requests` |
 | `matrix`, `merge` | ✅ with supported child generators |
-| `scmProvider`, `pullRequest`, `clusterDecisionResource`, `plugin` | ❌ queries a remote service |
+| `scmProvider`, `clusterDecisionResource`, `plugin` | ❌ queries a remote service |
 
 Unsupported generators fail with an explicit error rather than being silently
 skipped.
@@ -559,6 +565,58 @@ template:
 Without `--clusters` the generator still reports the `in-cluster` entry, exactly as
 it does on a fresh Argo CD install, and the render carries a warning saying so.
 
+### Pull requests
+
+The pull request generator asks an SCM provider (GitHub, GitLab, Gitea, Bitbucket,
+Azure DevOps) for the open pull requests of a repository. Locally, those pull
+requests are listed in a YAML file (or a directory of them) instead:
+
+```yaml
+# pull-requests.yaml
+- number: 42
+  title: Add a dark mode
+  branch: feature/dark_mode
+  targetBranch: main
+  headSHA: 8f3c1a9d2b7e4f60a1c3e5d7b9f2a4c6e8d0b1a3
+  labels: [preview, ui]
+  author: alice
+- repo: myorg/other-repo   # optional, see below
+  number: 7
+  branch: feature/elsewhere
+  targetBranch: main
+  headSHA: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+```
+
+```bash
+local-argocd-renderer --app appset.yaml --pull-requests pull-requests.yaml
+```
+
+`number` and `branch` are required; an unknown field is an error rather than an
+empty parameter. Everything after the provider call is what the controller does:
+
+- the generator's `filters` (`branchMatch`, `targetBranchMatch`, `titleMatch`) are
+  applied by the upstream code;
+- the provider's `labels` filter keeps only the pull requests carrying all of them,
+  as the GitHub, GitLab, Gitea and Azure DevOps APIs do;
+- the parameters are the upstream ones — `number`, `title`, `branch`,
+  `branch_slug`, `target_branch`, `target_branch_slug`, `head_sha`,
+  `head_short_sha`, `head_short_sha_7`, `author`, `labels` (Go templates only) and
+  `values`.
+
+A pull request without `repo` is reported to every pullRequest generator. With
+`repo`, only to the generator pointing at that repository, named as `owner/repo` for
+GitHub, Gitea and Bitbucket Cloud, `project` for GitLab, `project/repo` for
+Bitbucket Server and `organization/project/repo` for Azure DevOps — so one file can
+mock several repositories. Tokens, API URLs and GitLab's `pullRequestState` are not
+read: every listed pull request counts as open.
+
+The generated Applications usually point `targetRevision` at `{{ .head_sha }}`; like
+every revision it is ignored, and the checkout under `--repo-root` is rendered as it
+is. `examples/appset-pull-request` shows a preview environment per labelled pull
+request. Without `--pull-requests` the generator sees no open pull requests — so a
+`--dir` render of a tree holding a preview ApplicationSet still goes through — and
+the render carries a warning saying so.
+
 ## Examples
 
 The `examples/` directory contains sample applications and ApplicationSets.
@@ -577,7 +635,7 @@ The `examples/` directory contains sample applications and ApplicationSets.
 
 - **Local repositories only**: Remote Git repositories must be cloned first, including the ones a multi-source `$ref` names
 - **No server-side plugins**: Custom Argo CD plugins are not currently supported
-- **Remote ApplicationSet generators**: `scmProvider`, `pullRequest`, `clusterDecisionResource` and `plugin` query a remote service and are not supported
+- **Remote ApplicationSet generators**: `scmProvider`, `clusterDecisionResource` and `plugin` query a remote service and are not supported
 - **Simplified validation**: Some advanced Argo CD validation rules are not applied
 - **No diff capabilities**: Only renders manifests, doesn't compare with cluster state
 

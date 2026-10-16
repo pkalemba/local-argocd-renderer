@@ -1,0 +1,4 @@
+host: preview.example.com
+branch: main
+image:
+  tag: latest

@@ -40,6 +40,7 @@ func GenerateApplications(appSet *v1alpha1.ApplicationSet, opts TemplateOptions)
 	// cluster secret, so a render without --clusters silently covers fewer clusters
 	// than the real controller would.
 	var clustersUsed atomic.Bool
+	var pullRequestsUsed atomic.Bool
 
 	apps, _, err := template.GenerateApplications(
 		log.NewEntry(log.StandardLogger()),
@@ -49,6 +50,8 @@ func GenerateApplications(appSet *v1alpha1.ApplicationSet, opts TemplateOptions)
 			controllerNamespace: appSet.Namespace,
 			k8sClient:           k8sClient,
 			clustersUsed:        &clustersUsed,
+			pullRequestsFile:    opts.PullRequestsFile,
+			pullRequestsUsed:    &pullRequestsUsed,
 		}),
 		&utils.Render{},
 		k8sClient,
@@ -60,6 +63,10 @@ func GenerateApplications(appSet *v1alpha1.ApplicationSet, opts TemplateOptions)
 	var warnings []string
 	if clustersUsed.Load() && opts.ClustersFile == "" {
 		warnings = append(warnings, "the cluster generator only saw the in-cluster entry: pass the Argo CD cluster secrets via ClustersFile to render the registered clusters as well")
+	}
+
+	if pullRequestsUsed.Load() && opts.PullRequestsFile == "" {
+		warnings = append(warnings, "the pullRequest generator saw no pull requests: pass the open pull requests via PullRequestsFile to render a preview Application for each")
 	}
 
 	return apps, warnings, nil
@@ -78,11 +85,14 @@ type localGeneratorOptions struct {
 	controllerNamespace string
 	k8sClient           client.Client
 	clustersUsed        *atomic.Bool
+	pullRequestsFile    string
+	pullRequestsUsed    *atomic.Bool
 }
 
 // localGenerators mirrors generators.GetGenerators for an offline render: the List,
-// Git and Clusters generators are the upstream ones fed from local inputs, and
-// everything that has to reach out over the network reports an error instead.
+// Git and Clusters generators are the upstream ones fed from local inputs, the
+// PullRequest generator reads its pull requests from a local file, and everything
+// else that has to reach out over the network reports an error instead.
 func localGenerators(opts localGeneratorOptions) map[string]generators.Generator {
 	clusterGen := generators.NewClusterGenerator(opts.k8sClient, opts.controllerNamespace)
 
@@ -92,7 +102,7 @@ func localGenerators(opts localGeneratorOptions) map[string]generators.Generator
 		"Clusters":                &observedGenerator{Generator: clusterGen, used: opts.clustersUsed},
 		"SCMProvider":             unsupportedGeneratorNamed("scmProvider"),
 		"ClusterDecisionResource": unsupportedGeneratorNamed("clusterDecisionResource"),
-		"PullRequest":             unsupportedGeneratorNamed("pullRequest"),
+		"PullRequest":             newMockPullRequestGenerator(opts.pullRequestsFile, opts.pullRequestsUsed),
 		"Plugin":                  unsupportedGeneratorNamed("plugin"),
 	}
 

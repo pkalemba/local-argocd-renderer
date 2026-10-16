@@ -26,7 +26,7 @@ import (
 // can be fed in as-is. Every secret is moved into namespace so that the generator,
 // which looks in the Argo CD namespace, finds it.
 func loadClusterSecrets(path, namespace string) ([]corev1.Secret, error) {
-	files, err := clusterSecretFiles(path)
+	files, err := yamlFiles(path, "cluster secrets")
 	if err != nil {
 		return nil, err
 	}
@@ -49,10 +49,12 @@ func loadClusterSecrets(path, namespace string) ([]corev1.Secret, error) {
 	return secrets, nil
 }
 
-func clusterSecretFiles(path string) ([]string, error) {
+// yamlFiles lists path itself, or the *.yaml/*.yml files directly in it when it is
+// a directory. what names the contents for the error messages.
+func yamlFiles(path, what string) ([]string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read cluster secrets from %q: %w", path, err)
+		return nil, fmt.Errorf("failed to read %s from %q: %w", what, path, err)
 	}
 
 	if !info.IsDir() {
@@ -61,7 +63,7 @@ func clusterSecretFiles(path string) ([]string, error) {
 
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list cluster secrets in %q: %w", path, err)
+		return nil, fmt.Errorf("failed to list %s in %q: %w", what, path, err)
 	}
 
 	var files []string

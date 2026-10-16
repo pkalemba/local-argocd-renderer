@@ -82,6 +82,7 @@ type goldenTestCase struct {
 	appPath          string
 	expectedPath     string
 	clustersPath     string
+	pullRequestsPath string
 	capabilitiesPath string
 }
 
@@ -130,6 +131,12 @@ func TestGoldenExamples(t *testing.T) {
 			clustersPath: "examples/appset-clusters-helm/clusters.yaml",
 		},
 		{
+			name:             "appset-pull-request",
+			appPath:          "examples/appset-pull-request/appset.yaml",
+			expectedPath:     "examples/appset-pull-request/expected.yaml",
+			pullRequestsPath: "examples/appset-pull-request/pull-requests.yaml",
+		},
+		{
 			name:         "multi-source-ref",
 			appPath:      "examples/multi-source-ref/app.yaml",
 			expectedPath: "examples/multi-source-ref/expected.yaml",
@@ -150,6 +157,7 @@ func TestGoldenExamples(t *testing.T) {
 				ApplicationFile:      tc.appPath,
 				RepoRoot:             ".",
 				ClustersFile:         tc.clustersPath,
+				PullRequestsFile:     tc.pullRequestsPath,
 				HelmCapabilitiesFile: tc.capabilitiesPath,
 			}
 
