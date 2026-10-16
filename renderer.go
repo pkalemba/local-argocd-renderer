@@ -54,6 +54,9 @@ type TemplateOptions struct {
 	// ClustersFile points at a file or directory holding Argo CD cluster secrets.
 	// Without it the ApplicationSet cluster generator only sees the in-cluster entry.
 	ClustersFile string
+	// PullRequestsFile points at a file or directory listing the open pull requests
+	// the ApplicationSet pullRequest generator reports, in place of an SCM provider.
+	PullRequestsFile string
 	// IncludeApplications emits the Application resource itself alongside the
 	// manifests it renders to, so that the Applications an ApplicationSet generates
 	// come out next to their contents.

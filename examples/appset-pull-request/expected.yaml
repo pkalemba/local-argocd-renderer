@@ -1,0 +1,25 @@
+# Generated 2 manifests
+---
+apiVersion: v1
+data:
+  branch: feature/dark_mode
+  host: pr-42.preview.example.com
+  image: ghcr.io/myorg/myrepo:8f3c1a9d
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: preview-42
+  name: preview
+  namespace: preview-feature-dark-mode
+---
+apiVersion: v1
+data:
+  branch: fix/login-redirect
+  host: pr-57.preview.example.com
+  image: ghcr.io/myorg/myrepo:1b2c3d4e
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: preview-57
+  name: preview
+  namespace: preview-fix-login-redirect

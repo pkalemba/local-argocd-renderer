@@ -1,0 +1,33 @@
+# The open pull requests the generator sees in place of the SCM provider's API.
+# repo is optional: when set, the pull request is only reported to generators
+# pointing at that repository (owner/repo for GitHub).
+- number: 42
+  title: Add a dark mode
+  branch: feature/dark_mode
+  targetBranch: main
+  headSHA: 8f3c1a9d2b7e4f60a1c3e5d7b9f2a4c6e8d0b1a3
+  labels: [preview, ui]
+  author: alice
+- number: 57
+  title: Fix the login redirect
+  branch: fix/login-redirect
+  targetBranch: main
+  headSHA: 1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e
+  labels: [preview]
+  author: bob
+# Not labelled preview, so the generator never sees it.
+- number: 58
+  title: Bump dependencies
+  branch: deps/bump
+  targetBranch: main
+  headSHA: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  author: dependabot
+# Opened against another repository.
+- repo: myorg/other-repo
+  number: 7
+  title: Unrelated change
+  branch: feature/elsewhere
+  targetBranch: main
+  headSHA: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  labels: [preview]
+  author: carol

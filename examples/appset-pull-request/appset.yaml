@@ -1,0 +1,44 @@
+# Render with the pull requests mocked in this directory:
+#   local-argocd-renderer --app examples/appset-pull-request/appset.yaml \
+#     --pull-requests examples/appset-pull-request/pull-requests.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: preview-appset
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - pullRequest:
+        github:
+          owner: myorg
+          repo: myrepo
+          # Only pull requests carrying every one of these labels are reported,
+          # the same as the GitHub API filter.
+          labels: [preview]
+        filters:
+          - targetBranchMatch: ^main$
+        values:
+          host: pr-{{ .number }}.preview.example.com
+  template:
+    metadata:
+      name: preview-{{ .number }}
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/myorg/myrepo
+        # Ignored locally, like any revision: the checkout is rendered as it is.
+        targetRevision: '{{ .head_sha }}'
+        path: examples/appset-pull-request/input
+        helm:
+          parameters:
+            - name: host
+              value: '{{ .values.host }}'
+            - name: image.tag
+              value: '{{ .head_short_sha }}'
+            - name: branch
+              value: '{{ .branch }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: preview-{{ .branch_slug }}
