@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/argoproj/argo-cd/v3 v3.5.3
-	github.com/creativeprojects/go-selfupdate v1.6.0
+	github.com/creativeprojects/go-selfupdate v1.7.0
 	github.com/gosimple/slug v1.15.0
 	github.com/sergi/go-diff v1.4.0
 	github.com/sirupsen/logrus v1.10.2
@@ -32,7 +32,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.3.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/ProtonMail/go-crypto v1.1.6 // indirect
+	github.com/ProtonMail/go-crypto v1.5.2 // indirect
 	github.com/TomOnTime/utfutil v1.0.0 // indirect
 	github.com/argoproj/argo-cd/gitops-engine v0.7.1-0.20250908182407-97ad5b59a627 // indirect
 	github.com/argoproj/pkg/v2 v2.0.1 // indirect
@@ -169,7 +169,7 @@ require (
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/ulikunitz/xz v0.5.15 // indirect
+	github.com/ulikunitz/xz v0.5.17 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/vladimirvivien/gexe v0.5.0 // indirect
@@ -193,7 +193,7 @@ require (
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
@@ -206,7 +206,6 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.37.0 // indirect
 	k8s.io/apiserver v0.37.0 // indirect
 	k8s.io/cli-runtime v0.36.1 // indirect
